@@ -7,13 +7,18 @@ Provides an HTTP alternative to WebSocket for sending pulse signals
 
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database import list_payments
+from app.core.security import verify_api_key
 from app.models.schemas import BillAcceptedEvent, PulseSignal
 from app.services.bill_acceptor import handle_pulse
 
-router = APIRouter(prefix="/bills", tags=["bills"])
+router = APIRouter(
+    prefix="/bills",
+    tags=["bills"],
+    dependencies=[Depends(verify_api_key)],
+)
 
 
 @router.post("/pulse", response_model=BillAcceptedEvent, status_code=201)

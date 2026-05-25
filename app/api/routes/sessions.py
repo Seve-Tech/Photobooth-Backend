@@ -5,7 +5,7 @@ Sessions represent a single customer's photobooth interaction.
 The front-end uses these to create / track / complete sessions.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.database import (
     create_session,
@@ -13,6 +13,7 @@ from app.core.database import (
     list_sessions,
     update_session,
 )
+from app.core.security import verify_api_key
 from app.models.schemas import (
     SessionCreate,
     SessionResponse,
@@ -22,7 +23,11 @@ from app.models.schemas import (
 )
 from app.websocket.manager import manager
 
-router = APIRouter(prefix="/sessions", tags=["sessions"])
+router = APIRouter(
+    prefix="/sessions",
+    tags=["sessions"],
+    dependencies=[Depends(verify_api_key)],  # All session endpoints require X-API-Key
+)
 
 
 @router.post("", response_model=SessionResponse, status_code=201)

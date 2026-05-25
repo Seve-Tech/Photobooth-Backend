@@ -12,6 +12,16 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="HOST")
     port: int = Field(default=8000, alias="PORT")
 
+    # Security
+    # api_key MUST be set in .env — no default so the app fails fast if omitted.
+    api_key: str = Field(alias="API_KEY")
+    # The front-end origin allowed by CORS. Update to your production URL.
+    frontend_origin: str = Field(
+        default="http://localhost:3000", alias="FRONTEND_ORIGIN"
+    )
+    # Max WebSocket messages per client per 60-second window.
+    ws_rate_limit: int = Field(default=30, alias="WS_RATE_LIMIT")
+
     # Database — fill these in once the DB is ready
     # The db_url is set to a placeholder so the app boots without a real DB.
     # When the DB is ready, just set DATABASE_URL in your .env file.
