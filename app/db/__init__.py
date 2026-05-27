@@ -67,7 +67,7 @@ from app.db.expenses import (
     get_branch_expense_summary,
 )
 
-from app.db.sync_queue import (
+from app.db.sync import (
     enqueue_sync,
     list_pending_sync,
     mark_sync_done,

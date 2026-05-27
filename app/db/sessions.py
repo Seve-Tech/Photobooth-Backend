@@ -20,7 +20,7 @@ def _row_to_session_response(row) -> SessionResponse:
     )
 
 
-async def create_session(data: SessionCreate) -> SessionResponse:
+async def create_session(data: SessionCreate, branch_id: int, unit_id: int) -> SessionResponse:
     pool = get_pool()
     session_uuid = uuid.uuid4()
     now = datetime.utcnow()
@@ -54,13 +54,13 @@ async def create_session(data: SessionCreate) -> SessionResponse:
         row = await conn.fetchrow(
             query,
             session_uuid,
-            data.branch_id,
-            data.unit_id,
+            branch_id,
+            unit_id,
             data.package_id,
             data.customer_ref,
             SessionStatus.PENDING,
             now,
-            data.expected_amount,
+            None,          # expected_amount — not set at creation time
             Decimal("0.00"),
             "unpaid",
             0,

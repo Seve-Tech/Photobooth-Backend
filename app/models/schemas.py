@@ -23,9 +23,10 @@ class SessionStatus(str, Enum):
 
 
 class PaymentStatus(str, Enum):
-    RECEIVED = "received"     # Bill accepted by machine
-    VALIDATED = "validated"   # Amount matched expected denomination
-    REJECTED = "rejected"     # Unknown pulse count / bad signal
+    """Hardware result from the bill acceptor machine."""
+    RECEIVED = "received"     # Bill inserted by customer
+    VALIDATED = "validated"   # Pulse count matched a known denomination
+    REJECTED = "rejected"     # Unknown pulse count / bad signal — bill not credited
 
 
 # ---------------------------------------------------------------------------
@@ -49,14 +50,23 @@ class BillAcceptedEvent(BaseModel):
     """
     Processed payment event derived from a PulseSignal.
     amount is resolved using the pulse->denomination map in settings.
+
+    Field guide:
+      acceptor_status — hardware result: did the bill acceptor physically accept the bill?
+                        (VALIDATED / REJECTED)
+      payment_status  — financial record: state of the payment row in the DB
+                        ("completed" / "partial" / "pending")
     """
 
     pulse_count: int
     amount: float = Field(..., ge=0)
     currency: str = Field(default="PHP")
-    status: PaymentStatus
+    acceptor_status: PaymentStatus          # hardware bill acceptor result
     received_at: datetime
     session_id: str | None = None
+    payment_method: str = Field(default="cash")
+    payment_status: str | None = None       # financial outcome stored in DB payments table
+    reference_number: str | None = None     # reserved for future online payment integration
 
 
 # ---------------------------------------------------------------------------
@@ -70,8 +80,8 @@ class SessionCreate(BaseModel):
     customer_ref: str | None = Field(
         default=None, description="Optional name or reference for the customer"
     )
-    package_id: str | None = Field(
-        default=None, description="Photobooth package selected (if any)"
+    package_id: int | None = Field(
+        default=None, description="Photobooth package ID (integer PK from packages table)"
     )
 
 
@@ -91,7 +101,7 @@ class SessionResponse(BaseModel):
     total_paid: float
     currency: str
     customer_ref: str | None
-    package_id: str | None
+    package_id: int | None
     created_at: datetime
     updated_at: datetime
 

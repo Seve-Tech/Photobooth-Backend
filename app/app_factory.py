@@ -1,10 +1,13 @@
 import logging
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import bills, health, sessions
 from app.core.config import settings
+from app.db import init_db, close_db
 from app.websocket.endpoints import router as ws_router
 
 logging.basicConfig(
@@ -12,8 +15,23 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage the asyncpg connection pool for the lifetime of the application."""
+    logger.info("Starting up — initialising database connection pool...")
+    await init_db()
+    logger.info("Database pool ready.")
+    yield
+    logger.info("Shutting down — closing database connection pool...")
+    await close_db()
+    logger.info("Database pool closed.")
+
+
 def create_app() -> FastAPI:
-    app = FastAPI()
+    app = FastAPI(lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,

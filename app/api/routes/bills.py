@@ -9,7 +9,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.core.database import list_payments
+from app.db import list_payments
 from app.core.security import verify_api_key
 from app.models.schemas import BillAcceptedEvent, PulseSignal
 from app.services.bill_acceptor import handle_pulse

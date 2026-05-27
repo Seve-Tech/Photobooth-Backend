@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from app.core.config import settings
-from app.core.database import ping_db
+from app.db import ping_db
 from app.models.schemas import HealthResponse
 from app.websocket.manager import manager
 

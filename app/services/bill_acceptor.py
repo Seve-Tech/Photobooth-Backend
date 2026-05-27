@@ -3,21 +3,19 @@ Bill acceptor service.
 
 Responsible for:
 1. Translating pulse counts to PHP denominations.
-2. Persisting the payment event.
+2. Persisting the payment event and bill log to the database.
 3. Broadcasting the event to all WebSocket subscribers.
 """
 
 import logging
-from datetime import datetime
+from decimal import Decimal
 
 from app.core.config import settings
-from app.core.database import save_payment, update_session
+from app.db import save_payment, log_bill_accepted, get_session
 from app.models.schemas import (
     BillAcceptedEvent,
     PaymentStatus,
     PulseSignal,
-    SessionUpdate,
-    SessionStatus,
     WSMessage,
     WSMessageType,
 )
@@ -53,7 +51,7 @@ async def handle_pulse(signal: PulseSignal, session_id: str | None = None) -> Bi
         event = BillAcceptedEvent(
             pulse_count=signal.pulse_count,
             amount=0.0,
-            status=PaymentStatus.REJECTED,
+            acceptor_status=PaymentStatus.REJECTED,
             received_at=signal.received_at,
             session_id=session_id,
         )
@@ -67,19 +65,17 @@ async def handle_pulse(signal: PulseSignal, session_id: str | None = None) -> Bi
         event = BillAcceptedEvent(
             pulse_count=signal.pulse_count,
             amount=amount,
-            status=PaymentStatus.VALIDATED,
+            acceptor_status=PaymentStatus.VALIDATED,
             received_at=signal.received_at,
             session_id=session_id,
+            payment_method="cash",
+            # payment_status left None; save_payment() defaults it to "completed"
         )
 
-        # Update session total if a session is active
         if session_id:
-            await _credit_session(session_id, amount)
+            await _persist_payment(event, session_id, signal)
 
-    # Persist the payment event
-    await save_payment(event)
-
-    # Notify all WebSocket clients
+    # Broadcast the bill event to all WebSocket clients (frontend, dashboard, etc.)
     ws_message = WSMessage(
         type=WSMessageType.BILL_ACCEPTED,
         payload=event.model_dump(mode="json"),
@@ -89,27 +85,41 @@ async def handle_pulse(signal: PulseSignal, session_id: str | None = None) -> Bi
     return event
 
 
-async def _credit_session(session_id: str, amount: float) -> None:
-    """Add the paid amount to the session and mark it as PAID."""
-    from app.core.database import get_session
+async def _persist_payment(event: BillAcceptedEvent, session_id: str, signal: PulseSignal) -> None:
+    """
+    Persist a validated bill payment to the database.
 
-    session = await get_session(session_id)
-    if session is None:
-        logger.warning("Session %s not found while crediting payment", session_id)
-        return
+    save_payment() atomically in one DB transaction:
+      1. Inserts a row into `payments`
+      2. Updates sessions.paid_amount and payment_status
 
-    new_total = session.total_paid + amount
-    await update_session(
-        session_id,
-        SessionUpdate(status=SessionStatus.PAID, total_paid=new_total),
-    )
+    log_bill_accepted() writes hardware-level traceability to bill_acceptor_logs.
+    After persisting, the updated session is broadcast to all WebSocket clients.
+    """
+    try:
+        await save_payment(event)
+        logger.info("Payment persisted for session %s, amount: PHP %.2f", session_id, event.amount)
 
-    # Broadcast the session update too
-    from app.core.database import get_session as gs
-    updated = await gs(session_id)
-    if updated:
-        ws_message = WSMessage(
-            type=WSMessageType.SESSION_UPDATED,
-            payload=updated.model_dump(mode="json"),
+        await log_bill_accepted(
+            session_id=session_id,
+            denomination=Decimal(str(event.amount)),
+            raw_signal=str(signal.pulse_count),
+            hardware_status="accepted",
         )
-        await manager.broadcast(ws_message.model_dump_json())
+
+        # Broadcast the updated session so the frontend reflects the new paid_amount
+        updated = await get_session(session_id)
+        if updated:
+            ws_message = WSMessage(
+                type=WSMessageType.SESSION_UPDATED,
+                payload=updated.model_dump(mode="json"),
+            )
+            await manager.broadcast(ws_message.model_dump_json())
+
+    except Exception as exc:
+        logger.error(
+            "Failed to persist payment for session %s: %s",
+            session_id,
+            exc,
+            exc_info=True,
+        )

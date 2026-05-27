@@ -1,6 +1,6 @@
 # Photobooth Backend
 
-FastAPI backend for the photobooth system. Handles bill-acceptor (AGmarketing TB74) pulse signals, manages sessions, and broadcasts real-time events over WebSocket.
+FastAPI backend for the photobooth system. Handles bill-acceptor pulse signals, manages sessions, and broadcasts real-time events over WebSocket.
 
 ---
 
@@ -21,7 +21,7 @@ Arduino / Bill Acceptor
          │
          ▼
       Database
-  (in-memory now → swap to real DB later)
+    (PostgreSQL)
 ```
 
 ### Key files
@@ -35,8 +35,11 @@ photobooth-backend/
     ├── app_factory.py              # Creates the FastAPI app
     ├── core/
     │   ├── config.py               # Settings (reads .env)
-    │   ├── database.py             # DB layer (in-memory stub → replace later)
     │   └── security.py             # API key guard + WebSocket rate limiter
+    ├── db/                         # PostgreSQL queries & connection pool
+    │   ├── connection.py           # asyncpg pool lifecycle
+    │   ├── payments.py             # Payment queries
+    │   └── sessions.py             # Session queries
     ├── models/
     │   └── schemas.py              # Pydantic models / types
     ├── services/
@@ -70,19 +73,31 @@ uv sync
 cp .env.example .env
 ```
 
-Then open `.env` and set a real secret key:
-```
+Then open `.env` and configure your setup:
+```ini
 API_KEY=replace-with-a-long-random-string
+
+# Frontend origin allowed by CORS
+FRONTEND_ORIGIN=https://photobooth.yourdomain.com
+
+# PostgreSQL database connection
+DATABASE_URL=postgresql://your_db_username:your_db_password@localhost:5432/photobooth_db
+
+# Machine Identity (Set per physical deployment)
+BRANCH_ID=1
+UNIT_ID=1
 ```
 
-Generate one with:
+To generate a random API key:
 ```bash
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Also set your front-end origin before going to production:
-```
-FRONTEND_ORIGIN=https://photobooth.yourdomain.com
+### Setup Database
+
+Run the migration script to automatically create the database and all tables:
+```bash
+python migrate.py
 ```
 
 ### Run the server
@@ -153,7 +168,8 @@ Rate limit: **30 messages per minute** per connection (configurable via `WS_RATE
     "pulse_count": 3,
     "amount": 100.0,
     "currency": "PHP",
-    "status": "validated",
+    "acceptor_status": "validated",
+    "payment_status": "completed",
     "session_id": "optional-uuid"
   }
 }
@@ -198,20 +214,16 @@ To change the mapping, edit `BILL_PULSE_MAP` in `app/core/config.py` or override
 
 ---
 
-## Plugging in the real database
+## Running Unit Tests
 
-When the DB is ready:
+The project includes a suite of unit tests for the core logic and REST endpoints using a mocked database connection.
 
-1. Set `DATABASE_URL` in `.env`.
-2. Open `app/core/database.py`.
-3. Replace the in-memory dicts (`_sessions`, `_payments`) with real ORM queries.
-4. All function signatures stay the same — no other file needs to change.
+To run the tests:
+```bash
+uv run pytest -v
+```
 
 ---
 
 ## TODOs
-
-- [ ] Wire up real database (waiting on DB team)
-- [ ] Write unit tests for `bill_acceptor.py`
-- [ ] **Add a `GET /api/v1/bills/payments/{session_id}` convenience route** (Don't know if this is still needed)
 - [ ] Confirm exact pulse-count map with hardware team (TB74 config)

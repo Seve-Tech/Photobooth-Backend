@@ -1,13 +1,17 @@
 """
-Database stub.
+— DEPRECATED — 
 
-Right now everything is stored in-memory so the app runs
-without a real DB while the DB layer is being built.
+This file was the in-memory stub used before the real PostgreSQL layer (app/db/) was built.
+Nothing in the application imports from here anymore. It can be safely deleted.
 
-When the DB is ready:
-1. Replace the in-memory dicts below with your ORM session/queries.
-2. Keep the same function signatures — the rest of the app won't need to change.
-3. Set DATABASE_URL in .env and uncomment the engine/session setup.
+Replace any stale imports with the equivalents from app.db:
+    from app.core.database import create_session   →  from app.db import create_session
+    from app.core.database import get_session       →  from app.db import get_session
+    from app.core.database import list_sessions     →  from app.db import list_sessions
+    from app.core.database import update_session    →  from app.db import update_session
+    from app.core.database import save_payment      →  from app.db import save_payment
+    from app.core.database import list_payments     →  from app.db import list_payments
+    from app.core.database import ping_db           →  from app.db import ping_db
 """
 
 import uuid

@@ -22,13 +22,19 @@ class Settings(BaseSettings):
     # Max WebSocket messages per client per 60-second window.
     ws_rate_limit: int = Field(default=30, alias="WS_RATE_LIMIT")
 
-    # Database — fill these in once the DB is ready
-    # The db_url is set to a placeholder so the app boots without a real DB.
-    # When the DB is ready, just set DATABASE_URL in your .env file.
-    db_url: str = Field(
-        default="sqlite:///./photobooth_dev.db",
+    # Database
+    # Each photobooth unit sets DATABASE_URL, BRANCH_ID, and UNIT_ID in its own .env.
+    # DATABASE_URL must be a raw asyncpg DSN — no driver prefix:
+    #   postgresql://user:password@host:5432/dbname
+    DATABASE_URL: str = Field(
+        default="postgresql://postgres:password@localhost:5432/photobooth_db",
         alias="DATABASE_URL",
     )
+
+    # Machine identity — set once per physical deployment.
+    # These are auto-injected into every session so callers never need to pass them.
+    branch_id: int = Field(default=1, alias="BRANCH_ID")
+    unit_id: int = Field(default=1, alias="UNIT_ID")
 
     # Bill acceptor pulse config
     # AGmarketing TB74 sends N pulses per denomination.

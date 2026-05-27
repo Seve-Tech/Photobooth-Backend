@@ -7,13 +7,14 @@ The front-end uses these to create / track / complete sessions.
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.database import (
+from app.core.config import settings
+from app.core.security import verify_api_key
+from app.db import (
     create_session,
     get_session,
     list_sessions,
     update_session,
 )
-from app.core.security import verify_api_key
 from app.models.schemas import (
     SessionCreate,
     SessionResponse,
@@ -33,7 +34,11 @@ router = APIRouter(
 @router.post("", response_model=SessionResponse, status_code=201)
 async def create_new_session(body: SessionCreate) -> SessionResponse:
     """Start a new photobooth session (status starts as PENDING)."""
-    session = await create_session(body)
+    session = await create_session(
+        body,
+        branch_id=settings.branch_id,
+        unit_id=settings.unit_id,
+    )
 
     # Notify WebSocket subscribers that a session was created
     msg = WSMessage(
