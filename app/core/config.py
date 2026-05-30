@@ -20,7 +20,7 @@ class Settings(BaseSettings):
         default="http://localhost:3000", alias="FRONTEND_ORIGIN"
     )
     # Max WebSocket messages per client per 60-second window.
-    ws_rate_limit: int = Field(default=30, alias="WS_RATE_LIMIT")
+    ws_rate_limit: int = Field(default=40, alias="WS_RATE_LIMIT")
 
     # Database
     # Each photobooth unit sets DATABASE_URL, BRANCH_ID, and UNIT_ID in its own .env.
@@ -41,11 +41,11 @@ class Settings(BaseSettings):
     # Map: pulse_count -> amount in PHP (update as needed)
     bill_pulse_map: dict[int, float] = Field(
         default={
-            1: 20.0,
-            2: 50.0,
-            3: 100.0,
-            4: 200.0,
-            5: 500.0,
+            1: 10.0,
+            2: 20.0,
+            5: 50.0,
+            10: 100.0,
+            20: 200.0,
         }
     )
 

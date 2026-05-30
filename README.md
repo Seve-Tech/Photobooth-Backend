@@ -7,50 +7,64 @@ FastAPI backend for the photobooth system. Handles bill-acceptor pulse signals, 
 ## Architecture
 
 ```
-Arduino / Bill Acceptor
-        │
-        │ pulse signal (WebSocket or HTTP POST)
-        ▼
-┌───────────────────┐
-│   FastAPI Server  │
-│                   │
-│  /ws  WebSocket   │◄──── Front-end (subscribes for real-time events)
-│  /api/v1/bills    │
-│  /api/v1/sessions │
-└────────┬──────────┘
-         │
-         ▼
-      Database
-    (PostgreSQL)
+TB74 Bill Acceptor
+      │
+      │  electrical pulses (wire)
+      ▼
+   Arduino
+      │
+      │  USB serial  (e.g. COM3)  — sends pulse count as plain text: "10\n"
+      ▼
+   Mini-PC  ──────────────────────────────────────────────────────────┐
+      │                                                               │
+      │  arduino_bridge.py           FastAPI Server (:8000)           │
+      │  reads USB → forwards ──────►  /ws  WebSocket  ◄─────────────┘
+      │  as WebSocket message           /api/v1/bills       Front-end
+      │                                 /api/v1/sessions    (touchscreen)
+      │                                      │
+      │                                      ▼
+      │                                 PostgreSQL DB
+      └───────────────────────────────────────────────
 ```
 
 ### Key files
 
 ```
 photobooth-backend/
-├── main.py                         # Entry point
-├── mock_arduino.py                 # Simulates Arduino for local testing
-├── .env.example                    # Config template
+├── main.py                         # Entry point — starts the server
+├── arduino_bridge.py               # Real hardware: reads Arduino USB → forwards to backend
+├── mock_arduino.py                 # Development only: simulates Arduino via keyboard input
+├── seed_db.py                      # One-time DB seed (branch, unit, package)
+├── .env.example                    # Config template — copy to .env
 └── app/
-    ├── app_factory.py              # Creates the FastAPI app
+    ├── app_factory.py              # Wires up FastAPI, CORS, routes, DB pool lifecycle
     ├── core/
-    │   ├── config.py               # Settings (reads .env)
+    │   ├── config.py               # All settings (reads from .env)
     │   └── security.py             # API key guard + WebSocket rate limiter
-    ├── db/                         # PostgreSQL queries & connection pool
-    │   ├── connection.py           # asyncpg pool lifecycle
+    ├── db/                         # PostgreSQL layer (asyncpg)
+    │   ├── connection.py           # Connection pool init / teardown
+    │   ├── branches.py             # Branch queries
+    │   ├── units.py                # Photobooth unit queries
+    │   ├── packages.py             # Package queries
+    │   ├── sessions.py             # Session queries
     │   ├── payments.py             # Payment queries
-    │   └── sessions.py             # Session queries
+    │   ├── bill_logs.py            # Bill acceptor hardware log queries
+    │   ├── photos.py               # Photo record queries
+    │   ├── print_jobs.py           # Print job queries
+    │   ├── device_events.py        # Device event log queries
+    │   ├── expenses.py             # Expense queries
+    │   └── sync.py                 # Sync queue queries
     ├── models/
     │   └── schemas.py              # Pydantic models / types
     ├── services/
-    │   └── bill_acceptor.py        # Pulse → amount logic + DB + WS broadcast
+    │   └── bill_acceptor.py        # Pulse → amount → DB → WS broadcast
     ├── api/routes/
-    │   ├── bills.py                # POST /api/v1/bills/pulse
-    │   ├── sessions.py             # CRUD /api/v1/sessions
-    │   └── health.py               # GET /health
+    │   ├── health.py               # GET /health
+    │   ├── bills.py                # POST /api/v1/bills/pulse, GET /api/v1/bills/payments
+    │   └── sessions.py             # CRUD /api/v1/sessions
     └── websocket/
-        ├── manager.py              # Connection manager (broadcast helper)
-        └── endpoints.py            # /ws WebSocket endpoint
+        ├── manager.py              # Tracks connected clients, handles broadcast
+        └── endpoints.py            # /ws — auth check, rate limit, message dispatch
 ```
 
 ---
@@ -60,52 +74,67 @@ photobooth-backend/
 ### Requirements
 - Python 3.11+
 - [uv](https://github.com/astral-sh/uv)
+- PostgreSQL running locally (or on the same machine)
 
-### Install dependencies
+### 1. Install dependencies
 
 ```bash
 uv sync
 ```
 
-### Configure environment
+### 2. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Then open `.env` and configure your setup:
+Open `.env` and fill in your values:
+
 ```ini
+# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
 API_KEY=replace-with-a-long-random-string
 
-# Frontend origin allowed by CORS
-FRONTEND_ORIGIN=https://photobooth.yourdomain.com
+# The front-end origin allowed by CORS (use localhost:3000 for local dev)
+FRONTEND_ORIGIN=http://localhost:3000
 
-# PostgreSQL database connection
-DATABASE_URL=postgresql://your_db_username:your_db_password@localhost:5432/photobooth_db
+# Max WebSocket messages per client per minute
+WS_RATE_LIMIT=40
 
-# Machine Identity (Set per physical deployment)
+# PostgreSQL connection (no driver prefix — raw asyncpg DSN)
+DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/photobooth_db
+
+# Identity of this physical machine — set once per deployment
 BRANCH_ID=1
 UNIT_ID=1
 ```
 
-To generate a random API key:
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
+### 3. Create the database tables
 
-### Setup Database
-
-Run the migration script to automatically create the database and all tables:
 ```bash
 python migrate.py
 ```
 
-### Run the server
+### 4. Seed initial data (run once)
+
+Before the app can create sessions, the database needs at least one branch, one photobooth unit, and one package. Run this once after migrating:
 
 ```bash
-uv run python main.py
+python seed_db.py
+```
+
+This creates:
+- `branches` row — your photobooth location
+- `photobooth_units` row — this physical machine
+- `packages` row — the Standard Package (PHP 150.00)
+
+Safe to re-run — it skips rows that already exist.
+
+### 5. Run the server
+
+```bash
+python main.py
 # or with auto-reload during development:
-DEBUG=true uv run uvicorn main:app --reload
+uvicorn main:app --reload
 ```
 
 Server starts at **http://localhost:8000**
@@ -113,25 +142,50 @@ Interactive API docs: **http://localhost:8000/docs**
 
 ---
 
-## Testing with the mock Arduino client
+## Running with Hardware (Arduino + Bill Acceptor)
 
 Open **two terminals**:
 
-**Terminal 1 — start the server:**
+**Terminal 1 — start the backend:**
 ```bash
-uv run python main.py
+python main.py
+```
+
+**Terminal 2 — start the Arduino bridge:**
+```bash
+# Auto-detect the Arduino's USB port:
+python arduino_bridge.py
+
+# Or specify the port manually:
+python arduino_bridge.py --port COM3        # Windows
+python arduino_bridge.py --port /dev/ttyUSB0  # Linux
+```
+
+The bridge reads the pulse count from the Arduino over USB and forwards it to the backend as a WebSocket message. It reconnects automatically if either side drops.
+
+> **Arduino firmware requirement:** The Arduino sketch must print the pulse count as plain text followed by a newline: `Serial.println(pulseCount);`
+
+---
+
+## Development without Hardware (Mock Arduino)
+
+Open **two terminals**:
+
+**Terminal 1 — start the backend:**
+```bash
+python main.py
 ```
 
 **Terminal 2 — run the mock client:**
 ```bash
 # Interactive: type pulse counts manually
-uv run python mock_arduino.py
+python mock_arduino.py
 
 # Auto mode: sends all denominations in sequence
-uv run python mock_arduino.py --auto
+python mock_arduino.py --auto
 
-# With a session ID (create one via the API first):
-uv run python mock_arduino.py --session-id <uuid>
+# Attach to a specific session:
+python mock_arduino.py --session-id <uuid>
 ```
 
 ---
@@ -140,37 +194,47 @@ uv run python mock_arduino.py --session-id <uuid>
 
 ### WebSocket  `/ws`
 
-Connect from the front-end or Arduino bridge. **An API key is required as a query param.**
+All clients (front-end and Arduino bridge) connect here. **API key required as a query param.**
 
 ```
 ws://localhost:8000/ws?api_key=<your-API_KEY>
 ```
 
-**Send (client → server):**
+Rate limit: **40 messages per minute** per connection (set via `WS_RATE_LIMIT` in `.env`). Exceeding it returns an `error` message; the connection stays open.
+
+**Send — Arduino bridge → server:**
 ```json
 {
   "type": "pulse_received",
   "payload": {
-    "pulse_count": 3,
+    "pulse_count": 10,
     "source": "arduino",
-    "session_id": "optional-uuid"
+    "session_id": "uuid-of-active-session"
   }
 }
 ```
 
-Rate limit: **30 messages per minute** per connection (configurable via `WS_RATE_LIMIT` in `.env`). Exceeding it returns an `error` message; the connection stays open.
-
-**Receive (server → all clients):**
+**Receive — server → all connected clients:**
 ```json
 {
   "type": "bill_accepted",
   "payload": {
-    "pulse_count": 3,
+    "pulse_count": 10,
     "amount": 100.0,
     "currency": "PHP",
     "acceptor_status": "validated",
-    "payment_status": "completed",
-    "session_id": "optional-uuid"
+    "session_id": "uuid-of-active-session"
+  }
+}
+```
+
+```json
+{
+  "type": "session_updated",
+  "payload": {
+    "id": "uuid",
+    "status": "PENDING",
+    "total_paid": 100.0
   }
 }
 ```
@@ -181,18 +245,18 @@ Message types: `bill_accepted`, `session_updated`, `error`, `ping`, `pong`
 
 ### REST Endpoints
 
-All routes under `/api/v1/` require the header:
+All `/api/v1/` routes require the header:
 ```
 X-API-Key: <your-API_KEY>
 ```
-The `/health` routes are open — no key needed.
+`/health` is open — no key needed.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Liveness check |
 | `GET` | `/health/ws` | WebSocket client count |
-| `POST` | `/api/v1/bills/pulse?pulse_count=3` | Send pulse via HTTP |
-| `GET` | `/api/v1/bills/payments` | List all payments |
+| `POST` | `/api/v1/bills/pulse?pulse_count=10` | Send pulse via HTTP (fallback / testing) |
+| `GET` | `/api/v1/bills/payments` | List all payment records |
 | `POST` | `/api/v1/sessions` | Create a new session |
 | `GET` | `/api/v1/sessions` | List all sessions |
 | `GET` | `/api/v1/sessions/{id}` | Get one session |
@@ -200,25 +264,24 @@ The `/health` routes are open — no key needed.
 
 ---
 
-## Pulse → Denomination map
+## Pulse → Denomination Map
+
+Configured in `config.py`. Current mapping (update to match your TB74 settings):
 
 | Pulses | Amount |
 |--------|--------|
-| 1 | PHP 20 |
-| 2 | PHP 50 |
-| 3 | PHP 100 |
-| 4 | PHP 200 |
-| 5 | PHP 500 |
+| 1 | PHP 10 |
+| 2 | PHP 20 |
+| 5 | PHP 50 |
+| 10 | PHP 100 |
+| 20 | PHP 200 |
 
-To change the mapping, edit `BILL_PULSE_MAP` in `app/core/config.py` or override via `.env`.
+To change the mapping, update `bill_pulse_map` in `app/core/config.py`.
 
 ---
 
 ## Running Unit Tests
 
-The project includes a suite of unit tests for the core logic and REST endpoints using a mocked database connection.
-
-To run the tests:
 ```bash
 uv run pytest -v
 ```
@@ -226,4 +289,7 @@ uv run pytest -v
 ---
 
 ## TODOs
+
 - [ ] Confirm exact pulse-count map with hardware team (TB74 config)
+- [ ] Add `GET /api/v1/packages` endpoint so front-end can fetch available packages
+- [ ] Write unit tests for `bill_acceptor.py`

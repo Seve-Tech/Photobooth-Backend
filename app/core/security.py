@@ -61,8 +61,18 @@ async def verify_ws_api_key(websocket: WebSocket, api_key: str | None) -> bool:
     Returns True if the key is valid.
     Closes the socket with code 4001 and returns False if the key is wrong.
     """
+    # Fallback to query_params if parameter extraction failed
+    if api_key is None:
+        api_key = websocket.query_params.get("api_key")
+
+    # logger.debug("verify_ws_api_key: received api_key=%r, expected=%r", api_key, settings.api_key)
+
     if api_key != settings.api_key:
-        logger.warning("Rejected WebSocket connection: invalid or missing API key.")
+        logger.warning(
+            "Rejected WebSocket connection: invalid or missing API key. Received: %r, Expected: %r",
+            api_key,
+            settings.api_key
+        )
         await websocket.close(code=4001, reason="Invalid or missing API key.")
         return False
     return True

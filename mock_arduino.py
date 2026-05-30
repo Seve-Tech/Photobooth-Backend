@@ -1,13 +1,13 @@
 """
 Mock Arduino / bill-acceptor client.
 
-Simulates the AGmarketing TB74 sending pulse signals over WebSocket.
+Simulates the bill acceptor sending pulse signals over WebSocket.
 Run this alongside the main server to test the full flow without hardware.
 
 Usage:
-    uv run python mock_arduino.py
-    uv run python mock_arduino.py --session-id <id>   # attach to a session
-    uv run python mock_arduino.py --auto               # send pulses automatically
+    python mock_arduino.py
+    python mock_arduino.py --session-id <id>   # attach to a session
+    python mock_arduino.py --auto               # send pulses automatically
 """
 
 import asyncio
@@ -17,16 +17,15 @@ from datetime import datetime
 
 import websockets
 
+from app.core.config import settings
 
-SERVER_URL = "ws://localhost:8000/ws"
+# Reads API key from .env automatically — no need to hardcode it
+SERVER_URL = f"ws://localhost:{settings.port}/ws?api_key={settings.api_key}"
 
-# Human-readable denomination labels (matches settings.bill_pulse_map)
+# Human-readable denomination labels — built from settings so it always matches config.py
 DENOMINATION_LABELS: dict[int, str] = {
-    1: "PHP 20",
-    2: "PHP 50",
-    3: "PHP 100",
-    4: "PHP 200",
-    5: "PHP 500",
+    pulses: f"PHP {int(amount)}"
+    for pulses, amount in sorted(settings.bill_pulse_map.items())
 }
 
 
@@ -80,7 +79,8 @@ async def listen_for_events(websocket) -> None:
 
 async def interactive_mode(session_id: str | None) -> None:
     """Let the user manually type pulse counts."""
-    print(f"\nConnecting to {SERVER_URL} …")
+    safe_url = f"ws://localhost:{settings.port}/ws?api_key=***"
+    print(f"\nConnecting to {safe_url} …")
 
     async with websockets.connect(SERVER_URL) as ws:
         print("Connected!\n")
@@ -90,8 +90,9 @@ async def interactive_mode(session_id: str | None) -> None:
 
         print("Available denominations:")
         for pulse, label in DENOMINATION_LABELS.items():
-            print(f"  {pulse} pulse(s) → {label}")
-        print("\nType a pulse count (1-5) and press Enter. Ctrl+C to quit.\n")
+            print(f"  {pulse} pulse(s) -> {label}")
+        valid = list(DENOMINATION_LABELS.keys())
+        print(f"\nType a pulse count {valid} and press Enter. Ctrl+C to quit.\n")
 
         loop = asyncio.get_event_loop()
 
@@ -103,7 +104,7 @@ async def interactive_mode(session_id: str | None) -> None:
                 print(f"  Sending {pulse_count} pulse(s) ({label}) …")
                 await ws.send(build_pulse_message(pulse_count, session_id))
             except ValueError:
-                print("  Please enter a number between 1 and 5.")
+                print(f"  Please enter a valid pulse count: {list(DENOMINATION_LABELS.keys())}")
             except KeyboardInterrupt:
                 print("\nDisconnecting…")
                 break
@@ -111,7 +112,8 @@ async def interactive_mode(session_id: str | None) -> None:
 
 async def auto_mode(session_id: str | None) -> None:
     """Automatically send one of each denomination with a 2-second gap."""
-    print(f"\nConnecting to {SERVER_URL} in AUTO mode …")
+    safe_url = f"ws://localhost:{settings.port}/ws?api_key=***"
+    print(f"\nConnecting to {safe_url} in AUTO mode …")
 
     async with websockets.connect(SERVER_URL) as ws:
         print("Connected! Will send all denominations in sequence.\n")
@@ -119,7 +121,7 @@ async def auto_mode(session_id: str | None) -> None:
         asyncio.create_task(listen_for_events(ws))
 
         for pulse_count, label in DENOMINATION_LABELS.items():
-            print(f"Sending {pulse_count} pulse(s) → {label}")
+            print(f"Sending {pulse_count} pulse(s) -> {label}")
             await ws.send(build_pulse_message(pulse_count, session_id))
             await asyncio.sleep(2)
 
