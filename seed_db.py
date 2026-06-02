@@ -72,7 +72,7 @@ async def seed() -> None:
             "PKG-STANDARD",
             "Standard Package",
             "4 shots, 1 print strip",
-            Decimal("150.00"),
+            Decimal("199.00"),
             4,    # number_of_shots
             1,    # print_count
             120,  # duration_seconds (2 minutes)
