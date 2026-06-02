@@ -14,15 +14,45 @@ Safe to re-run — each section checks before inserting.
 """
 
 import asyncio
+import sys
 from decimal import Decimal
 
 import asyncpg
 from app.core.config import settings
+from migrate import create_tables
 
 
 async def seed() -> None:
     conn = await asyncpg.connect(settings.DATABASE_URL)
     print(f"Connected to: {settings.DATABASE_URL}\n")
+
+    if "--reset" in sys.argv:
+        print("[!] --reset flag detected. Dropping existing tables...")
+        tables = [
+            "sync_queue",
+            "expenses",
+            "device_events",
+            "print_jobs",
+            "photos",
+            "bill_acceptor_logs",
+            "payments",
+            "sessions",
+            "packages",
+            "photobooth_units",
+            "branches"
+        ]
+        for table in tables:
+            await conn.execute(f"DROP TABLE IF EXISTS {table} CASCADE;")
+            print(f"[-] Dropped table if exists: {table}")
+        
+        print("\nRe-creating tables...")
+        # Close connection so migrate can open its own, or use it directly.
+        await conn.close()
+        await create_tables()
+        
+        # Reconnect for seeding
+        conn = await asyncpg.connect(settings.DATABASE_URL)
+        print("\nDatabase reset complete. Proceeding to seed...")
 
     # ── 1. Branch ─────────────────────────────────────────────────────────────
     existing = await conn.fetchrow("SELECT id FROM branches WHERE id = 1")
@@ -72,7 +102,7 @@ async def seed() -> None:
             "PKG-STANDARD",
             "Standard Package",
             "4 shots, 1 print strip",
-            Decimal("150.00"),
+            Decimal("200.00"),
             4,    # number_of_shots
             1,    # print_count
             120,  # duration_seconds (2 minutes)

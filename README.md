@@ -4,6 +4,23 @@ FastAPI backend for the photobooth system. Handles bill-acceptor pulse signals, 
 
 ---
 
+## 🗺️ Quick Navigation
+
+Click any of the sections below to jump directly to it:
+
+| Section | Description |
+| :--- | :--- |
+| [🏗️ System Architecture](#architecture) | Hardware connectivity, components, and data flow |
+| [📁 Project Structure](#key-files) | Map of key codebase files and directories |
+| [⚙️ Setup & Installation](#setup) | Steps to configure environment, database, and run |
+| [🔌 Running with Hardware](#running-with-hardware-arduino--bill-acceptor) | Launching with the physical Arduino & Bill Acceptor |
+| [💻 Development without Hardware](#development-without-hardware-mock-arduino) | Simulating hardware pulses locally |
+| [🌐 API Reference](#api-reference) | WebSocket protocol specification and REST endpoints |
+| [🪙 Pulse-to-Cash Mapping](#pulse--denomination-map) | Configuration detail for TB74 bill acceptor signals |
+| [🧪 Running Unit Tests](#running-unit-tests) | Verifying changes with the `pytest` suite |
+
+---
+
 ## Architecture
 
 ```
@@ -125,9 +142,16 @@ python seed_db.py
 This creates:
 - `branches` row — your photobooth location
 - `photobooth_units` row — this physical machine
-- `packages` row — the Standard Package (PHP 150.00)
+- `packages` row — the Standard Package (PHP 200.00)
 
-Safe to re-run — it skips rows that already exist.
+#### Developer Options
+If you want to clear all data and reset the database schema from scratch before seeding, run with the `--reset` flag:
+```bash
+python seed_db.py --reset
+```
+*Note: This drops all existing tables and re-executes migrations.*
+
+Safe to re-run without flags — it will skip rows that already exist.
 
 ### 5. Run the server
 
@@ -290,6 +314,4 @@ uv run pytest -v
 
 ## TODOs
 
-- [ ] Confirm exact pulse-count map with hardware team (TB74 config)
-- [ ] Add `GET /api/v1/packages` endpoint so front-end can fetch available packages
-- [ ] Write unit tests for `bill_acceptor.py`
+- [ ] Pass the real money value from arduino to back-end
