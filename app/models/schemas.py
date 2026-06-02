@@ -83,6 +83,12 @@ class SessionCreate(BaseModel):
     package_id: int | None = Field(
         default=None, description="Photobooth package ID (integer PK from packages table)"
     )
+    paid_amount: float | None = Field(
+        default=0.0, description="Optionally pass final total paid amount to create as paid session"
+    )
+    payment_method: str | None = Field(
+        default="cash", description="Payment method used (e.g. cash, or online methods in future)"
+    )
 
 
 class SessionUpdate(BaseModel):

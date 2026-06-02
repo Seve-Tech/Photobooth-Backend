@@ -8,8 +8,9 @@ from app.models.schemas import PulseSignal, PaymentStatus, BillAcceptedEvent
 
 def test_resolve_amount():
     """Test pulse to PHP amount mapping."""
-    assert resolve_amount(1) == 20.0
-    assert resolve_amount(3) == 100.0
+    assert resolve_amount(1) == 10.0
+    assert resolve_amount(2) == 20.0
+    assert resolve_amount(10) == 100.0
     assert resolve_amount(99) is None  # Unknown pulse
 
 
@@ -35,7 +36,7 @@ async def test_handle_pulse_invalid(mock_broadcast):
 @patch("app.services.bill_acceptor.manager.broadcast", new_callable=AsyncMock)
 async def test_handle_pulse_valid_with_session(mock_broadcast, mock_persist):
     """Test handling a valid pulse when an active session exists."""
-    signal = PulseSignal(pulse_count=3, received_at=datetime.utcnow(), source="arduino")
+    signal = PulseSignal(pulse_count=10, received_at=datetime.utcnow(), source="arduino")
     session_id = "test-session-uuid"
     
     event = await handle_pulse(signal, session_id=session_id)

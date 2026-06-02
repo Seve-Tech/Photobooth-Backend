@@ -25,52 +25,112 @@ async def create_session(data: SessionCreate, branch_id: int, unit_id: int) -> S
     session_uuid = uuid.uuid4()
     now = datetime.utcnow()
 
-    query = """
-        INSERT INTO sessions (
-            session_uuid,
-            branch_id,
-            unit_id,
-            package_id,
-            customer_ref,
-            session_status,
-            started_at,
-            expected_amount,
-            paid_amount,
-            payment_status,
-            total_photos_taken,
-            total_prints,
-            sync_status,
-            created_at,
-            updated_at
-        ) VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9, $10,
-            $11, $12, $13, $14, $15
-        )
-        RETURNING *
-    """
-
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            query,
-            session_uuid,
-            branch_id,
-            unit_id,
-            data.package_id,
-            data.customer_ref,
-            SessionStatus.PENDING,
-            now,
-            None,          # expected_amount — not set at creation time
-            Decimal("0.00"),
-            "unpaid",
-            0,
-            0,
-            "pending",
-            now,
-            now,
-        )
+        async with conn.transaction():
+            # Get the expected price of the package
+            expected_amount = Decimal("0.00")
+            if data.package_id is not None:
+                pkg_row = await conn.fetchrow(
+                    "SELECT price FROM packages WHERE id = $1 LIMIT 1",
+                    data.package_id
+                )
+                if pkg_row:
+                    expected_amount = pkg_row["price"]
 
-    return _row_to_session_response(row)
+            # Calculate statuses based on paid amount
+            paid_amount = Decimal(str(data.paid_amount or 0.0))
+            if paid_amount >= expected_amount and expected_amount > 0:
+                payment_status = "paid"
+                session_status = SessionStatus.PAID
+            elif paid_amount > 0:
+                payment_status = "partial"
+                session_status = SessionStatus.PENDING
+            else:
+                payment_status = "unpaid"
+                session_status = SessionStatus.PENDING
+
+            insert_session_query = """
+                INSERT INTO sessions (
+                    session_uuid,
+                    branch_id,
+                    unit_id,
+                    package_id,
+                    customer_ref,
+                    session_status,
+                    started_at,
+                    expected_amount,
+                    paid_amount,
+                    payment_status,
+                    total_photos_taken,
+                    total_prints,
+                    sync_status,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5,
+                    $6, $7, $8, $9, $10,
+                    0, 0, 'pending', $11, $11
+                )
+                RETURNING *
+            """
+
+            session_row = await conn.fetchrow(
+                insert_session_query,
+                session_uuid,
+                branch_id,
+                unit_id,
+                data.package_id,
+                data.customer_ref,
+                session_status.value,
+                now,
+                expected_amount,
+                paid_amount,
+                payment_status,
+                now,
+            )
+
+            # If there's an initial payment, create a payment record and hardware log
+            if paid_amount > 0:
+                payment_uuid = uuid.uuid4()
+                insert_payment_query = """
+                    INSERT INTO payments (
+                        payment_uuid,
+                        session_id,
+                        payment_method,
+                        payment_status,
+                        amount,
+                        received_at,
+                        sync_status,
+                        created_at
+                    ) VALUES ($1, $2, $3, 'completed', $4, $5, 'pending', $5)
+                """
+                await conn.execute(
+                    insert_payment_query,
+                    payment_uuid,
+                    session_row["id"],
+                    data.payment_method or "cash",
+                    paid_amount,
+                    now,
+                )
+
+                insert_log_query = """
+                    INSERT INTO bill_acceptor_logs (
+                        session_id,
+                        denomination,
+                        bill_count,
+                        raw_signal,
+                        hardware_status,
+                        inserted_at
+                    ) VALUES ($1, $2, 1, 'prepaid', 'accepted', $3)
+                """
+                await conn.execute(
+                    insert_log_query,
+                    session_row["id"],
+                    paid_amount,
+                    now,
+                )
+
+    return _row_to_session_response(session_row)
 
 
 async def get_session(session_id: str) -> SessionResponse | None:
@@ -174,5 +234,19 @@ async def complete_session(session_id: str) -> SessionResponse | None:
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(query, now, uuid.UUID(session_id))
+
+    return _row_to_session_response(row) if row else None
+
+
+async def get_active_pending_session() -> SessionResponse | None:
+    pool = get_pool()
+    query = """
+        SELECT * FROM sessions
+        WHERE session_status = 'pending' AND payment_status != 'paid'
+        ORDER BY created_at DESC
+        LIMIT 1
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query)
 
     return _row_to_session_response(row) if row else None

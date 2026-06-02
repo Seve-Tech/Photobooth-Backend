@@ -65,6 +65,10 @@ async def save_payment(event: BillAcceptedEvent) -> dict[str, Any]:
                         WHEN paid_amount + $1 >= expected_amount THEN 'paid'
                         ELSE 'partial'
                     END,
+                    session_status = CASE
+                        WHEN paid_amount + $1 >= expected_amount THEN 'paid'
+                        ELSE session_status
+                    END,
                     updated_at = $2
                 WHERE session_uuid = $3
             """

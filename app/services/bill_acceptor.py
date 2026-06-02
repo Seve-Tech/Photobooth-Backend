@@ -11,11 +11,12 @@ import logging
 from decimal import Decimal
 
 from app.core.config import settings
-from app.db import save_payment, log_bill_accepted, get_session
+from app.db import save_payment, log_bill_accepted, get_session, create_session, get_active_pending_session
 from app.models.schemas import (
     BillAcceptedEvent,
     PaymentStatus,
     PulseSignal,
+    SessionCreate,
     WSMessage,
     WSMessageType,
 )
@@ -56,6 +57,21 @@ async def handle_pulse(signal: PulseSignal, session_id: str | None = None) -> Bi
             session_id=session_id,
         )
     else:
+        # If no session_id is provided, resolve or create one
+        if not session_id:
+            active_session = await get_active_pending_session()
+            if active_session:
+                session_id = active_session.id
+                logger.info("Associated incoming bill with active pending session: %s", session_id)
+            else:
+                logger.info("No active pending session found. Automatically creating a new session on bill insertion.")
+                new_session = await create_session(
+                    SessionCreate(package_id=1, customer_ref="Guest"),
+                    branch_id=settings.branch_id,
+                    unit_id=settings.unit_id,
+                )
+                session_id = new_session.id
+
         logger.info(
             "Bill accepted — pulses: %d, amount: PHP %.2f, session: %s",
             signal.pulse_count,
@@ -69,7 +85,6 @@ async def handle_pulse(signal: PulseSignal, session_id: str | None = None) -> Bi
             received_at=signal.received_at,
             session_id=session_id,
             payment_method="cash",
-            # payment_status left None; save_payment() defaults it to "completed"
         )
 
         if session_id:

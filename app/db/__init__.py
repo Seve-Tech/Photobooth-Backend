@@ -30,6 +30,7 @@ from app.db.sessions import (
     list_sessions,
     update_session,
     complete_session,
+    get_active_pending_session,
 )
 
 from app.db.payments import (
@@ -99,6 +100,7 @@ __all__ = [
     "list_sessions",
     "update_session",
     "complete_session",
+    "get_active_pending_session",
     "save_payment",
     "list_payments",
     "log_bill_accepted",
