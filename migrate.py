@@ -215,6 +215,16 @@ async def create_tables() -> None:
         """)
         print("[+] Indexes ready.")
 
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS admin_settings (
+                id          SERIAL PRIMARY KEY,
+                unit_id     INT  NOT NULL REFERENCES photobooth_units(id) UNIQUE,
+                pin_hash    TEXT NOT NULL,
+                updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+            );
+        """)
+        print("[+] Table 'admin_settings' ready.")
+
     finally:
         await conn.close()
 

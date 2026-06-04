@@ -151,3 +151,20 @@ class HealthResponse(BaseModel):
 class ErrorResponse(BaseModel):
     detail: str
     code: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Admin PIN models
+# ---------------------------------------------------------------------------
+
+
+class AdminPinVerifyRequest(BaseModel):
+    """Payload to verify the admin PIN at the login modal."""
+
+    pin: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class AdminPinChangeRequest(BaseModel):
+    """Payload to set a new 6-digit admin PIN."""
+
+    new_pin: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")

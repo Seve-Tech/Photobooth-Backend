@@ -13,11 +13,25 @@ Two protection mechanisms are provided:
 import logging
 import time
 
+import bcrypt
 from fastapi import Header, HTTPException, WebSocket, status
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# ── PIN hashing (bcrypt) ─────────────────────────────────────────────────
+
+
+def hash_pin(plain_pin: str) -> str:
+    """Return a bcrypt hash of the given plain-text PIN."""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(plain_pin.encode("utf-8"), salt).decode("utf-8")
+
+
+def verify_pin(plain_pin: str, hashed: str) -> bool:
+    """Return True if plain_pin matches the stored bcrypt hash."""
+    return bcrypt.checkpw(plain_pin.encode("utf-8"), hashed.encode("utf-8"))
 
 
 # ── REST: API-Key dependency ──────────────────────────────────────────────────

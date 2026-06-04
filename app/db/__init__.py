@@ -1,5 +1,10 @@
 from app.db.connection import init_db, close_db, ping_db
 
+from app.db.admin_settings import (
+    get_admin_pin_hash,
+    upsert_admin_pin,
+)
+
 from app.db.branches import (
     create_branch,
     get_branch,
@@ -80,6 +85,8 @@ __all__ = [
     "init_db",
     "close_db",
     "ping_db",
+    "get_admin_pin_hash",
+    "upsert_admin_pin",
     "create_branch",
     "get_branch",
     "get_branch_by_code",
