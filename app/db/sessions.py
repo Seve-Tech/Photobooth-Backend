@@ -148,9 +148,37 @@ async def get_session(session_id: str) -> SessionResponse | None:
     return _row_to_session_response(row) if row else None
 
 
+async def count_sessions(
+    branch_id: int | None = None,
+    unit_id: int | None = None,
+) -> int:
+    """Return the total number of sessions (optionally filtered)."""
+    pool = get_pool()
+
+    conditions: list[str] = []
+    values: list[Any] = []
+
+    if branch_id is not None:
+        values.append(branch_id)
+        conditions.append(f"branch_id = ${len(values)}")
+
+    if unit_id is not None:
+        values.append(unit_id)
+        conditions.append(f"unit_id = ${len(values)}")
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    query = f"SELECT COUNT(*) FROM sessions {where}"
+
+    async with pool.acquire() as conn:
+        return await conn.fetchval(query, *values) or 0
+
+
 async def list_sessions(
     branch_id: int | None = None,
     unit_id: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
 ) -> list[SessionResponse]:
     pool = get_pool()
 
@@ -167,10 +195,14 @@ async def list_sessions(
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
+    values.append(limit)
+    values.append(offset)
+
     query = f"""
         SELECT * FROM sessions
         {where}
         ORDER BY created_at DESC
+        LIMIT ${len(values) - 1} OFFSET ${len(values)}
     """
 
     async with pool.acquire() as conn:

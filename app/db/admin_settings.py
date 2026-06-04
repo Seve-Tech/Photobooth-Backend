@@ -51,3 +51,41 @@ async def upsert_admin_pin(unit_id: int, new_hash: str) -> None:
 
     async with pool.acquire() as conn:
         await conn.execute(query, unit_id, new_hash, now)
+
+
+async def get_default_theme(unit_id: int) -> str:
+    """
+    Fetch the default theme configured for the given unit.
+    Returns 'neon' if not configured yet.
+    """
+    pool = get_pool()
+
+    query = """
+        SELECT default_theme
+        FROM admin_settings
+        WHERE unit_id = $1
+        LIMIT 1
+    """
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query, unit_id)
+
+    return row["default_theme"] if row and row["default_theme"] else "neon"
+
+
+async def update_default_theme(unit_id: int, theme: str) -> None:
+    """
+    Update the default theme for the given unit.
+    """
+    pool = get_pool()
+    now = datetime.utcnow()
+
+    query = """
+        UPDATE admin_settings
+        SET default_theme = $1, updated_at = $2
+        WHERE unit_id = $3
+    """
+
+    async with pool.acquire() as conn:
+        await conn.execute(query, theme, now, unit_id)
+

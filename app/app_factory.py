@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import bills, health, sessions
 from app.api.routes import admin as admin_routes
 from app.core.config import settings
-from app.db import init_db, close_db
+from app.db.connection import init_db, close_db, get_pool
 from app.websocket.endpoints import router as ws_router
 
 from app.db.admin_settings import get_admin_pin_hash, upsert_admin_pin
@@ -29,8 +29,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     logger.info("Database pool ready.")
 
-    # Seed the default admin PIN (000000) if this unit has no PIN stored yet.
-    # This runs harmlessly on every restart after the first seed.
+    # Ensure database schema is up-to-date
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS default_theme VARCHAR(50) NOT NULL DEFAULT 'neon';"
+        )
+    logger.info("Database schema check complete (default_theme ready).")
+
     existing_hash = await get_admin_pin_hash(settings.unit_id)
     if existing_hash is None:
         await upsert_admin_pin(settings.unit_id, hash_pin("000000"))

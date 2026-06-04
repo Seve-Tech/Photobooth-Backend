@@ -90,3 +90,37 @@ async def deactivate_package(package_id: int) -> dict[str, Any] | None:
         row = await conn.fetchrow(query, package_id)
 
     return row_to_dict(row) if row else None
+
+
+async def update_package_price(package_id: int, price: Decimal) -> dict[str, Any] | None:
+    """Update the price of a package and return the updated row."""
+    pool = get_pool()
+
+    query = """
+        UPDATE packages
+        SET price = $1
+        WHERE id = $2
+        RETURNING *
+    """
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query, price, package_id)
+
+    return row_to_dict(row) if row else None
+
+
+async def get_package_price(package_id: int) -> dict[str, Any] | None:
+    """Return id, package_name, and price for a specific package."""
+    pool = get_pool()
+
+    query = """
+        SELECT id, package_name, price
+        FROM packages
+        WHERE id = $1
+        LIMIT 1
+    """
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query, package_id)
+
+    return row_to_dict(row) if row else None

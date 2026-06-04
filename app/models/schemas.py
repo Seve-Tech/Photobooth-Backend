@@ -168,3 +168,30 @@ class AdminPinChangeRequest(BaseModel):
     """Payload to set a new 6-digit admin PIN."""
 
     new_pin: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+# ---------------------------------------------------------------------------
+# Admin data / dashboard models
+# ---------------------------------------------------------------------------
+
+
+class PaginatedSessions(BaseModel):
+    """Paginated response for the admin sessions list endpoint."""
+
+    items: list[SessionResponse]
+    total: int
+
+
+class PackagePriceUpdate(BaseModel):
+    """Payload to update a package price from the admin dashboard."""
+
+    package_id: int = Field(..., gt=0, description="ID of the package to update")
+    price: float = Field(..., ge=0, description="New price in PHP (0 = free mode)")
+
+
+class ThemeUpdate(BaseModel):
+    """Payload to update the default kiosk theme from the admin dashboard."""
+
+    theme: str = Field(..., description="Theme name (e.g. 'neon', 'chibi', 'luxury', 'retro', 'flowery')")
+
+

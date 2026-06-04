@@ -3,6 +3,8 @@ from app.db.connection import init_db, close_db, ping_db
 from app.db.admin_settings import (
     get_admin_pin_hash,
     upsert_admin_pin,
+    get_default_theme,
+    update_default_theme,
 )
 
 from app.db.branches import (
@@ -27,12 +29,15 @@ from app.db.packages import (
     get_package,
     list_packages,
     deactivate_package,
+    update_package_price,
+    get_package_price,
 )
 
 from app.db.sessions import (
     create_session,
     get_session,
     list_sessions,
+    count_sessions,
     update_session,
     complete_session,
     get_active_pending_session,
@@ -65,6 +70,7 @@ from app.db.print_jobs import (
 from app.db.device_events import (
     log_device_event,
     list_device_events,
+    count_device_events,
 )
 
 from app.db.expenses import (
@@ -87,6 +93,8 @@ __all__ = [
     "ping_db",
     "get_admin_pin_hash",
     "upsert_admin_pin",
+    "get_default_theme",
+    "update_default_theme",
     "create_branch",
     "get_branch",
     "get_branch_by_code",
@@ -102,9 +110,12 @@ __all__ = [
     "get_package",
     "list_packages",
     "deactivate_package",
+    "update_package_price",
+    "get_package_price",
     "create_session",
     "get_session",
     "list_sessions",
+    "count_sessions",
     "update_session",
     "complete_session",
     "get_active_pending_session",
@@ -122,6 +133,7 @@ __all__ = [
     "list_print_jobs",
     "log_device_event",
     "list_device_events",
+    "count_device_events",
     "create_expense",
     "list_expenses",
     "get_branch_expense_summary",

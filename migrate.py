@@ -217,11 +217,15 @@ async def create_tables() -> None:
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS admin_settings (
-                id          SERIAL PRIMARY KEY,
-                unit_id     INT  NOT NULL REFERENCES photobooth_units(id) UNIQUE,
-                pin_hash    TEXT NOT NULL,
-                updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+                id            SERIAL PRIMARY KEY,
+                unit_id       INT  NOT NULL REFERENCES photobooth_units(id) UNIQUE,
+                pin_hash      TEXT NOT NULL,
+                default_theme VARCHAR(50) NOT NULL DEFAULT 'neon',
+                updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
             );
+
+            ALTER TABLE admin_settings
+            ADD COLUMN IF NOT EXISTS default_theme VARCHAR(50) NOT NULL DEFAULT 'neon';
         """)
         print("[+] Table 'admin_settings' ready.")
 
