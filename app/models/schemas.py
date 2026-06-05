@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 class SessionStatus(str, Enum):
     PENDING = "pending"       # Waiting for payment
     PAID = "paid"             # Payment received, booth unlocked
+    PHOTO_ACTIVE = "photo_active"    # DSLRBooth session is currently active
+    PHOTO_COMPLETE = "photo_complete" # DSLRBooth session has completed
     COMPLETED = "completed"   # Photo session done
     CANCELLED = "cancelled"   # Session was cancelled
 
@@ -124,6 +126,10 @@ class WSMessageType(str, Enum):
     ERROR = "error"                         # Something went wrong
     PING = "ping"
     PONG = "pong"
+    PHOTO_SESSION_STARTED = "photo_session_started"   # DSLRBooth session started
+    PHOTO_SESSION_COMPLETE = "photo_session_complete" # DSLRBooth session finished
+    PHOTO_SESSION_ERROR = "photo_session_error"       # DSLRBooth session failed
+    DSLRBOOTH_STATUS = "dslrbooth_status"             # DSLRBooth event webhook updates
 
 
 class WSMessage(BaseModel):

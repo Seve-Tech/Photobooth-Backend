@@ -282,3 +282,17 @@ async def get_active_pending_session() -> SessionResponse | None:
         row = await conn.fetchrow(query)
 
     return _row_to_session_response(row) if row else None
+
+
+async def get_active_photo_session() -> SessionResponse | None:
+    pool = get_pool()
+    query = """
+        SELECT * FROM sessions
+        WHERE session_status = 'photo_active'
+        ORDER BY created_at DESC
+        LIMIT 1
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query)
+
+    return _row_to_session_response(row) if row else None

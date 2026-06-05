@@ -49,6 +49,14 @@ class Settings(BaseSettings):
         }
     )
 
+    # DSLRBooth Integration
+    dslrbooth_host: str = Field(default="http://localhost:1500", alias="DSLRBOOTH_HOST")
+    dslrbooth_password: str = Field(default="", alias="DSLRBOOTH_PASSWORD")
+    dslrbooth_mock: bool = Field(default=True, alias="DSLRBOOTH_MOCK")
+    dslrbooth_session_timeout_s: int = Field(default=300, alias="DSLRBOOTH_SESSION_TIMEOUT_S")
+    dslrbooth_booth_mode: str = Field(default="print", alias="DSLRBOOTH_BOOTH_MODE")
+    dslrbooth_mock_session_duration_s: int = Field(default=10, alias="DSLRBOOTH_MOCK_SESSION_DURATION_S")
+
     model_config = {"env_file": ".env", "populate_by_name": True}
 
 

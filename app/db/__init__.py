@@ -41,6 +41,7 @@ from app.db.sessions import (
     update_session,
     complete_session,
     get_active_pending_session,
+    get_active_photo_session,
 )
 
 from app.db.payments import (
@@ -119,6 +120,7 @@ __all__ = [
     "update_session",
     "complete_session",
     "get_active_pending_session",
+    "get_active_photo_session",
     "save_payment",
     "list_payments",
     "log_bill_accepted",

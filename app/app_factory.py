@@ -5,7 +5,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import bills, health, sessions
+from app.api.routes import bills, health, sessions, photo_session
 from app.api.routes import admin as admin_routes
 from app.core.config import settings
 from app.db.connection import init_db, close_db, get_pool
@@ -63,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(bills.router,         prefix="/api/v1")
     app.include_router(sessions.router,      prefix="/api/v1")
+    app.include_router(photo_session.router,  prefix="/api/v1")
     app.include_router(admin_routes.router,  prefix="/api/v1")
 
     # ── WebSocket ─────────────────────────────────────────────────────────────

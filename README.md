@@ -1,6 +1,6 @@
 # Photobooth Backend
 
-FastAPI backend for the photobooth system. Handles bill-acceptor pulse signals, manages sessions, and broadcasts real-time events over WebSocket.
+FastAPI backend for the photobooth system. It handles bill-acceptor pulse signals, manages customer sessions, integrates with DSLRBooth API/webhooks, and broadcasts real-time events over WebSockets.
 
 ---
 
@@ -15,9 +15,11 @@ Click any of the sections below to jump directly to it:
 | [⚙️ Setup & Installation](#setup) | Steps to configure environment, database, and run |
 | [🔌 Running with Hardware](#running-with-hardware-arduino--bill-acceptor) | Launching with the physical Arduino & Bill Acceptor |
 | [💻 Development without Hardware](#development-without-hardware-mock-arduino) | Simulating hardware pulses locally |
+| [📸 Development without DSLRBooth](#-development-without-dslrbooth-mock-server) | Simulating DSLRBooth HTTP API & Webhooks locally |
 | [🌐 API Reference](#api-reference) | WebSocket protocol specification and REST endpoints |
 | [🪙 Pulse-to-Cash Mapping](#pulse--denomination-map) | Configuration detail for TB74 bill acceptor signals |
 | [🧪 Running Unit Tests](#running-unit-tests) | Verifying changes with the `pytest` suite |
+| [📝 Roadmap & TODOs](#roadmap--todos) | Upcoming tasks and completed items |
 
 ---
 
@@ -38,6 +40,8 @@ TB74 Bill Acceptor
       │  reads USB → forwards ──────►  /ws  WebSocket  ◄─────────────┘
       │  as WebSocket message           /api/v1/bills       Front-end
       │                                 /api/v1/sessions    (touchscreen)
+      │                                 /api/v1/photo-session
+      │                                 /api/v1/admin
       │                                      │
       │                                      ▼
       │                                 PostgreSQL DB
@@ -50,8 +54,8 @@ TB74 Bill Acceptor
 photobooth-backend/
 ├── main.py                         # Entry point — starts the server
 ├── arduino_bridge.py               # Real hardware: reads Arduino USB → forwards to backend
-├── mock_arduino.py                 # Development only: simulates Arduino via keyboard input
 ├── seed_db.py                      # One-time DB seed (branch, unit, package)
+├── migrate.py                      # Database migrations
 ├── .env.example                    # Config template — copy to .env
 └── app/
     ├── app_factory.py              # Wires up FastAPI, CORS, routes, DB pool lifecycle
@@ -60,6 +64,7 @@ photobooth-backend/
     │   └── security.py             # API key guard + WebSocket rate limiter
     ├── db/                         # PostgreSQL layer (asyncpg)
     │   ├── connection.py           # Connection pool init / teardown
+    │   ├── admin_settings.py       # Admin settings queries (PIN, theme)
     │   ├── branches.py             # Branch queries
     │   ├── units.py                # Photobooth unit queries
     │   ├── packages.py             # Package queries
@@ -72,16 +77,22 @@ photobooth-backend/
     │   ├── expenses.py             # Expense queries
     │   └── sync.py                 # Sync queue queries
     ├── models/
-    │   └── schemas.py              # Pydantic models / types
+    │   └── schemas.py              # Pydantic models / validation types
     ├── services/
-    │   └── bill_acceptor.py        # Pulse → amount → DB → WS broadcast
+    │   ├── bill_acceptor.py        # Pulse → amount → DB → WS broadcast
+    │   └── dslrbooth_service.py    # DSLRBooth controller & API calls
     ├── api/routes/
-    │   ├── health.py               # GET /health
+    │   ├── health.py               # GET /health, GET /health/ws
     │   ├── bills.py                # POST /api/v1/bills/pulse, GET /api/v1/bills/payments
-    │   └── sessions.py             # CRUD /api/v1/sessions
+    │   ├── sessions.py             # CRUD /api/v1/sessions
+    │   ├── photo_session.py        # DSLRBooth start/webhook/complete routes
+    │   └── admin.py                # Admin dashboard verify-pin, themes & queries
     └── websocket/
         ├── manager.py              # Tracks connected clients, handles broadcast
         └── endpoints.py            # /ws — auth check, rate limit, message dispatch
+mock-backend/
+├── mock_arduino.py                 # Development only: simulates Arduino via keyboard input
+└── mock_dslrbooth.py               # Development only: simulates DSLRBooth API + triggers
 ```
 
 ---
@@ -123,6 +134,16 @@ DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/photobooth_db
 # Identity of this physical machine — set once per deployment
 BRANCH_ID=1
 UNIT_ID=1
+
+# ── DSLRBooth Integration ─────────────────────────
+# Set DSLRBOOTH_MOCK=true during local development (no DSLRBooth installed)
+# Set DSLRBOOTH_MOCK=false on the client's Mini PC for production
+DSLRBOOTH_MOCK=true
+DSLRBOOTH_HOST=http://localhost:1500
+DSLRBOOTH_PASSWORD=                    # Get this from DSLRBooth Settings → General → API tab
+DSLRBOOTH_BOOTH_MODE=print             # Options: print, gif, boomerang, video
+DSLRBOOTH_SESSION_TIMEOUT_S=300        # Max seconds to wait before timing out
+DSLRBOOTH_MOCK_SESSION_DURATION_S=10   # Mock session duration in seconds
 ```
 
 ### 3. Create the database tables
@@ -143,6 +164,7 @@ This creates:
 - `branches` row — your photobooth location
 - `photobooth_units` row — this physical machine
 - `packages` row — the Standard Package (PHP 200.00)
+- `admin_settings` row — seeds the default Admin PIN (`000000`) for the unit
 
 #### Developer Options
 If you want to clear all data and reset the database schema from scratch before seeding, run with the `--reset` flag:
@@ -203,20 +225,46 @@ python main.py
 **Terminal 2 — run the mock client:**
 ```bash
 # Interactive: type pulse counts manually
-python mock_arduino.py
+python mock-backend/mock_arduino.py
 
 # Auto mode: sends all denominations in sequence
-python mock_arduino.py --auto
+python mock-backend/mock_arduino.py --auto
 
 # Attach to a specific session:
-python mock_arduino.py --session-id <uuid>
+python mock-backend/mock_arduino.py --session-id <uuid>
 ```
+
+---
+
+## 📸 Development without DSLRBooth (Mock Server)
+
+To test the photo session flow without having DSLRBooth installed:
+
+**Terminal 1 — run the mock DSLRBooth API server:**
+```bash
+python mock-backend/mock_dslrbooth.py
+```
+This runs a mock server on port 1500. When `/api/start` is triggered, it runs a background task simulating the 10 standard DSLRBooth trigger webhook callbacks back to the backend.
+
+**Terminal 2 — configure env and run backend:**
+Ensure `.env` contains:
+```ini
+DSLRBOOTH_MOCK=false
+DSLRBOOTH_HOST=http://localhost:1500
+```
+Then run the backend:
+```bash
+python main.py
+```
+The backend will now make real HTTP calls to the mock server, which will fire webhooks back to the backend.
+
+*Note: Alternatively, you can set `DSLRBOOTH_MOCK=true` in `.env` to simulate the webhook callbacks internally inside the backend process without needing to run `mock_dslrbooth.py`.*
 
 ---
 
 ## API Reference
 
-### WebSocket  `/ws`
+### WebSocket `/ws`
 
 All clients (front-end and Arduino bridge) connect here. **API key required as a query param.**
 
@@ -257,34 +305,62 @@ Rate limit: **40 messages per minute** per connection (set via `WS_RATE_LIMIT` i
   "type": "session_updated",
   "payload": {
     "id": "uuid",
-    "status": "PENDING",
+    "status": "pending",
     "total_paid": 100.0
   }
 }
 ```
 
-Message types: `bill_accepted`, `session_updated`, `error`, `ping`, `pong`
+Message types: `pulse_received`, `bill_accepted`, `session_updated`, `error`, `ping`, `pong`, `photo_session_started`, `photo_session_complete`, `photo_session_error`, `dslrbooth_status`
 
 ---
 
 ### REST Endpoints
 
-All `/api/v1/` routes require the header:
-```
+All endpoints prefixed with `/api/v1/` require the header:
+```http
 X-API-Key: <your-API_KEY>
 ```
-`/health` is open — no key needed.
+`/health` and `/api/v1/photo-session/webhook` do not require an API key.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/health` | Liveness check |
-| `GET` | `/health/ws` | WebSocket client count |
-| `POST` | `/api/v1/bills/pulse?pulse_count=10` | Send pulse via HTTP (fallback / testing) |
-| `GET` | `/api/v1/bills/payments` | List all payment records |
-| `POST` | `/api/v1/sessions` | Create a new session |
-| `GET` | `/api/v1/sessions` | List all sessions |
-| `GET` | `/api/v1/sessions/{id}` | Get one session |
-| `PATCH` | `/api/v1/sessions/{id}` | Update session status |
+#### 🩺 Health & Monitoring
+| Method | Path | Auth | Description |
+| :--- | :--- | :---: | :--- |
+| `GET` | `/health` | Open | Liveness + database connectivity status |
+| `GET` | `/health/ws` | Open | Total number of currently connected WS clients |
+
+#### 🪙 Bills & Payments
+| Method | Path | Auth | Description |
+| :--- | :--- | :---: | :--- |
+| `POST` | `/api/v1/bills/pulse` | Key | Send pulse count via HTTP (fallback/test query param: `pulse_count`, optional `session_id`) |
+| `GET` | `/api/v1/bills/payments` | Key | List payments, optionally filtered by `session_id` |
+
+#### 📂 Sessions
+| Method | Path | Auth | Description |
+| :--- | :--- | :---: | :--- |
+| `POST` | `/api/v1/sessions` | Key | Create a new photobooth session (returns session UUID) |
+| `GET` | `/api/v1/sessions` | Key | List all session records |
+| `GET` | `/api/v1/sessions/{session_id}` | Key | Retrieve details of a single session |
+| `PATCH` | `/api/v1/sessions/{session_id}` | Key | Partially update session details (status, total_paid, customer_ref) |
+
+#### 📸 DSLRBooth Photo Session Integration
+| Method | Path | Auth | Description |
+| :--- | :--- | :---: | :--- |
+| `POST` | `/api/v1/photo-session/start` | Key | Starts a DSLRBooth photo capture session (expects JSON body: `{"session_id": "<uuid>"}`) |
+| `GET` | `/api/v1/photo-session/webhook` | Open | Webhook trigger receiver called by DSLRBooth (sends query param `event_type`) |
+| `POST` | `/api/v1/photo-session/complete/{session_id}` | Key | Explicitly completes the photo session, marking it `COMPLETED` |
+
+#### ⚙️ Admin Dashboard
+| Method | Path | Auth | Description |
+| :--- | :--- | :---: | :--- |
+| `POST` | `/api/v1/admin/verify-pin` | Key | Verify the 6-digit admin PIN (expects JSON: `{"pin": "000000"}`) |
+| `PATCH` | `/api/v1/admin/pin` | Key | Update the 6-digit admin PIN (expects JSON: `{"new_pin": "123456"}`) |
+| `GET` | `/api/v1/admin/sessions` | Key | Paginated list of sessions for transactions overview (query params: `limit`, `offset`) |
+| `GET` | `/api/v1/admin/logs` | Key | Paginated hardware logs / device events (query params: `limit`, `offset`, `severity`) |
+| `GET` | `/api/v1/admin/package-price` | Key | Fetch current price of package (query param: `package_id`) |
+| `PATCH` | `/api/v1/admin/package-price` | Key | Update package price (expects JSON: `{"package_id": 1, "price": 250.0}`) |
+| `GET` | `/api/v1/admin/theme` | Key | Get the default kiosk UI theme |
+| `PATCH` | `/api/v1/admin/theme` | Key | Update the default kiosk UI theme (expects JSON: `{"theme": "neon"}`) |
 
 ---
 
@@ -293,12 +369,12 @@ X-API-Key: <your-API_KEY>
 Configured in `config.py`. Current mapping (update to match your TB74 settings):
 
 | Pulses | Amount |
-|--------|--------|
-| 1 | PHP 10 |
-| 2 | PHP 20 |
-| 5 | PHP 50 |
-| 10 | PHP 100 |
-| 20 | PHP 200 |
+| :---: | :--- |
+| 1 | PHP 10.00 |
+| 2 | PHP 20.00 |
+| 5 | PHP 50.00 |
+| 10 | PHP 100.00 |
+| 20 | PHP 200.00 |
 
 To change the mapping, update `bill_pulse_map` in `app/core/config.py`.
 
@@ -315,3 +391,4 @@ uv run pytest -v
 ## TODOs
 
 - [ ] Pass the real money value from arduino to back-end
+- [ ] Setup real DSLRBooth software application to test the photobooth functionality
