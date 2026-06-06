@@ -3,9 +3,9 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from app.db.connection import get_pool, row_to_dict
+from app.db.connection import get_pool, row_to_dict, localize_datetime
 from app.models.schemas import SessionCreate, SessionResponse, SessionStatus, SessionUpdate
-
+ 
 
 def _row_to_session_response(row) -> SessionResponse:
     return SessionResponse(
@@ -15,8 +15,8 @@ def _row_to_session_response(row) -> SessionResponse:
         currency="PHP",
         customer_ref=row.get("customer_ref"),
         package_id=row["package_id"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
+        created_at=localize_datetime(row["created_at"]),
+        updated_at=localize_datetime(row["updated_at"]),
     )
 
 
@@ -295,4 +295,4 @@ async def get_active_photo_session() -> SessionResponse | None:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(query)
 
-    return _row_to_session_response(row) if row else None
+    return _row_to_session_response(row) if row else None

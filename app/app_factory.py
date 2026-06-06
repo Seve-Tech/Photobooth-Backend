@@ -13,6 +13,7 @@ from app.websocket.endpoints import router as ws_router
 
 from app.db.admin_settings import get_admin_pin_hash, upsert_admin_pin
 from app.core.security import hash_pin
+from app.db import log_device_event
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -20,6 +21,13 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _log(event_type: str, message: str, severity: str = "info") -> None:
+    try:
+        await log_device_event(settings.unit_id, event_type, message, severity)
+    except Exception:
+        pass
 
 
 @asynccontextmanager
@@ -42,7 +50,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await upsert_admin_pin(settings.unit_id, hash_pin("000000"))
         logger.info("Seeded default admin PIN (000000) for unit %d.", settings.unit_id)
 
+    await _log("server_startup", f"Server started for unit {settings.unit_id}", "info")
+
     yield
+    await _log("server_shutdown", f"Server is shutting down for unit {settings.unit_id}", "info")
     logger.info("Shutting down — closing database connection pool...")
     await close_db()
     logger.info("Database pool closed.")

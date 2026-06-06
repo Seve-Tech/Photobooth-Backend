@@ -11,7 +11,14 @@ import logging
 from decimal import Decimal
 
 from app.core.config import settings
-from app.db import save_payment, log_bill_accepted, get_session, create_session, get_active_pending_session
+from app.db import (
+    save_payment,
+    log_bill_accepted,
+    get_session,
+    create_session,
+    get_active_pending_session,
+    log_device_event,
+)
 from app.models.schemas import (
     BillAcceptedEvent,
     PaymentStatus,
@@ -23,6 +30,13 @@ from app.models.schemas import (
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
+
+
+async def _log(event_type: str, message: str, severity: str = "info") -> None:
+    try:
+        await log_device_event(settings.unit_id, event_type, message, severity)
+    except Exception:
+        pass
 
 
 def resolve_amount(pulse_count: int) -> float | None:
@@ -49,6 +63,7 @@ async def handle_pulse(signal: PulseSignal, session_id: str | None = None) -> Bi
 
     if amount is None:
         logger.warning("Unknown pulse count received: %d", signal.pulse_count)
+        await _log("bill_unknown_pulse", f"Unknown pulse count received: {signal.pulse_count}", "warning")
         event = BillAcceptedEvent(
             pulse_count=signal.pulse_count,
             amount=0.0,
@@ -137,4 +152,9 @@ async def _persist_payment(event: BillAcceptedEvent, session_id: str, signal: Pu
             session_id,
             exc,
             exc_info=True,
+        )
+        await _log(
+            "bill_persist_failed",
+            f"Failed to persist payment for session {session_id}: {exc}",
+            "error",
         )

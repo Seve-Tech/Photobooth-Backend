@@ -18,13 +18,22 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.core.config import settings
 from app.core.security import verify_ws_api_key, ws_rate_limiter
+from app.db import log_device_event
 from app.models.schemas import PulseSignal, WSMessage, WSMessageType
 from app.services.bill_acceptor import handle_pulse
 from app.websocket.manager import manager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _log(event_type: str, message: str, severity: str = "info") -> None:
+    try:
+        await log_device_event(settings.unit_id, event_type, message, severity)
+    except Exception:
+        pass
 
 
 @router.websocket("/ws")
@@ -53,6 +62,7 @@ async def websocket_endpoint(
         return  # Socket is already closed; nothing more to do.
 
     await manager.connect(websocket)
+    await _log("ws_client_connected", "WebSocket client connected", "info")
 
     try:
         while True:
@@ -64,6 +74,7 @@ async def websocket_endpoint(
                     payload={"detail": "Rate limit exceeded. Slow down your messages."},
                 )
                 await manager.send_to(websocket, error.model_dump_json())
+                await _log("ws_rate_limit", "WebSocket message rate limit exceeded", "warning")
                 continue  # Drop the message but keep the connection open.
 
             await _handle_message(websocket, raw)
@@ -71,6 +82,7 @@ async def websocket_endpoint(
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         ws_rate_limiter.remove(websocket)
+        await _log("ws_client_disconnected", "WebSocket client disconnected", "info")
     except Exception as exc:
         logger.exception("Unexpected WebSocket error: %s", exc)
         manager.disconnect(websocket)
@@ -110,3 +122,4 @@ async def _handle_message(websocket: WebSocket, raw: str) -> None:
 
         case _:
             logger.debug("Unhandled WS message type: %s", msg.type)
+            await _log("ws_unknown_message", f"Unhandled WS message type: {msg.type}", "warning")

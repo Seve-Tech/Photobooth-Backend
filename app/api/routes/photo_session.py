@@ -14,6 +14,7 @@ from app.db import (
     update_session,
     complete_session,
     get_active_photo_session,
+    log_device_event,
 )
 from app.models.schemas import (
     SessionResponse,
@@ -26,6 +27,13 @@ from app.services.dslrbooth_service import dslrbooth_service
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
+
+
+async def _log(event_type: str, message: str, severity: str = "info") -> None:
+    try:
+        await log_device_event(settings.unit_id, event_type, message, severity)
+    except Exception:
+        pass
 
 router = APIRouter(
     prefix="/photo-session",
@@ -46,6 +54,11 @@ async def _schedule_session_timeout(session_id: str, timeout_seconds: int) -> No
             logger.warning(
                 "Session %s timed out waiting for DSLRBooth session_end webhook trigger",
                 session_id,
+            )
+            await _log(
+                "photo_session_timeout",
+                f"Session {session_id} timed out waiting for DSLRBooth session_end",
+                "warning",
             )
             # Force transition to COMPLETED (or we could go to cancel/error, but COMPLETED allows recovery)
             updated = await update_session(
@@ -90,6 +103,11 @@ async def start_photo_session(
 
     # 1. Check if DSLRBooth is reachable
     if not await dslrbooth_service.is_reachable():
+        await _log(
+            "dslrbooth_unreachable",
+            f"DSLRBooth API is unreachable when starting session {body.session_id}",
+            "error",
+        )
         raise HTTPException(
             status_code=503,
             detail="DSLRBooth API is unreachable. Please make sure the app is running.",
@@ -109,6 +127,11 @@ async def start_photo_session(
         await update_session(
             body.session_id, SessionUpdate(status=SessionStatus.PAID)
         )
+        await _log(
+            "dslrbooth_start_failed",
+            f"Failed to start DSLRBooth for session {body.session_id}: {result.ErrorMessage}",
+            "error",
+        )
         raise HTTPException(
             status_code=400,
             detail=f"Failed to start DSLRBooth: {result.ErrorMessage}",
@@ -120,6 +143,11 @@ async def start_photo_session(
         payload=updated.model_dump(mode="json"),
     )
     await manager.broadcast(msg.model_dump_json())
+    await _log(
+        "photo_session_started",
+        f"Photo session {body.session_id} started successfully",
+        "info",
+    )
 
     # 5. Schedule timeout safety net
     background_tasks.add_task(
@@ -187,10 +215,20 @@ async def dslrbooth_webhook(
                     payload=updated.model_dump(mode="json"),
                 )
                 await manager.broadcast(comp_msg.model_dump_json())
+                await _log(
+                    "photo_session_complete",
+                    f"Photo session {session_id} completed successfully via webhook",
+                    "info",
+                )
     else:
         logger.warning(
             "Received DSLRBooth webhook '%s' but no active photo session was found in DB.",
             event_type,
+        )
+        await _log(
+            "dslrbooth_orphan_webhook",
+            f"Received DSLRBooth webhook '{event_type}' but no active session was found in DB",
+            "warning",
         )
 
     return {"status": "success", "event_type": event_type}

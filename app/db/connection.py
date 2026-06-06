@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import asyncpg
@@ -5,6 +6,15 @@ import asyncpg
 from app.core.config import settings
 
 _pool: asyncpg.Pool | None = None
+PH_TZ = timezone(timedelta(hours=8))
+
+
+def localize_datetime(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc).astimezone(PH_TZ)
+    return dt.astimezone(PH_TZ)
 
 
 async def init_db() -> None:
@@ -31,7 +41,11 @@ def get_pool() -> asyncpg.Pool:
 
 
 def row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
-    return dict(row)
+    d = dict(row)
+    for k, v in d.items():
+        if isinstance(v, datetime):
+            d[k] = localize_datetime(v)
+    return d
 
 
 async def ping_db() -> bool:
