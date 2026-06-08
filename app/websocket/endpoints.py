@@ -21,8 +21,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.core.config import settings
 from app.core.security import verify_ws_api_key, ws_rate_limiter
 from app.db import log_device_event
-from app.models.schemas import PulseSignal, WSMessage, WSMessageType
-from app.services.bill_acceptor import handle_pulse
+from app.models.schemas import AmountSignal, WSMessage, WSMessageType
+from app.services.bill_acceptor import handle_amount
 from app.websocket.manager import manager
 
 router = APIRouter()
@@ -107,16 +107,16 @@ async def _handle_message(websocket: WebSocket, raw: str) -> None:
             pong = WSMessage(type=WSMessageType.PONG)
             await manager.send_to(websocket, pong.model_dump_json())
 
-        case WSMessageType.PULSE_RECEIVED:
+        case WSMessageType.AMOUNT_RECEIVED:
             try:
-                signal = PulseSignal(**msg.payload)
+                signal = AmountSignal(**msg.payload)
                 session_id: str | None = msg.payload.get("session_id")
-                await handle_pulse(signal, session_id=session_id)
+                await handle_amount(signal, session_id=session_id)
             except Exception as exc:
-                logger.exception("Failed to handle pulse: %s", exc)
+                logger.exception("Failed to handle amount: %s", exc)
                 error = WSMessage(
                     type=WSMessageType.ERROR,
-                    payload={"detail": f"Failed to process pulse: {exc}"},
+                    payload={"detail": f"Failed to process amount: {exc}"},
                 )
                 await manager.send_to(websocket, error.model_dump_json())
 

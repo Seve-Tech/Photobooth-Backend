@@ -32,7 +32,7 @@ TB74 Bill Acceptor
       ▼
    Arduino
       │
-      │  USB serial  (e.g. COM3)  — sends pulse count as plain text: "10\n"
+      │  USB serial  (e.g. COM3)  — sends amount as plain text: "50\n" or JSON: '{"amount":50}'
       ▼
    Mini-PC  ──────────────────────────────────────────────────────────┐
       │                                                               │
@@ -207,9 +207,9 @@ python arduino_bridge.py --port COM3        # Windows
 python arduino_bridge.py --port /dev/ttyUSB0  # Linux
 ```
 
-The bridge reads the pulse count from the Arduino over USB and forwards it to the backend as a WebSocket message. It reconnects automatically if either side drops.
+The bridge reads the amount from the Arduino over USB and forwards it to the backend as a WebSocket message. It reconnects automatically if either side drops.
 
-> **Arduino firmware requirement:** The Arduino sketch must print the pulse count as plain text followed by a newline: `Serial.println(pulseCount);`
+> **Arduino firmware requirement:** The Arduino sketch must print the amount as plain text followed by a newline: `Serial.println(amount);` or as a JSON string: `Serial.println("{\"amount\": 50}");`
 
 ---
 
@@ -224,7 +224,7 @@ python main.py
 
 **Terminal 2 — run the mock client:**
 ```bash
-# Interactive: type pulse counts manually
+# Interactive: type amounts manually
 python mock-backend/mock_arduino.py
 
 # Auto mode: sends all denominations in sequence
@@ -277,11 +277,9 @@ Rate limit: **40 messages per minute** per connection (set via `WS_RATE_LIMIT` i
 **Send — Arduino bridge → server:**
 ```json
 {
-  "type": "pulse_received",
+  "type": "amount_received",
   "payload": {
-    "pulse_count": 10,
-    "source": "arduino",
-    "session_id": "uuid-of-active-session"
+    "amount": 50.0
   }
 }
 ```
@@ -291,8 +289,7 @@ Rate limit: **40 messages per minute** per connection (set via `WS_RATE_LIMIT` i
 {
   "type": "bill_accepted",
   "payload": {
-    "pulse_count": 10,
-    "amount": 100.0,
+    "amount": 50.0,
     "currency": "PHP",
     "acceptor_status": "validated",
     "session_id": "uuid-of-active-session"
@@ -332,7 +329,7 @@ X-API-Key: <your-API_KEY>
 #### 🪙 Bills & Payments
 | Method | Path | Auth | Description |
 | :--- | :--- | :---: | :--- |
-| `POST` | `/api/v1/bills/pulse` | Key | Send pulse count via HTTP (fallback/test query param: `pulse_count`, optional `session_id`) |
+| `POST` | `/api/v1/bills/amount` | Key | Send amount via HTTP (fallback/test query param: `amount`, optional `session_id`) |
 | `GET` | `/api/v1/bills/payments` | Key | List payments, optionally filtered by `session_id` |
 
 #### 📂 Sessions
@@ -364,19 +361,18 @@ X-API-Key: <your-API_KEY>
 
 ---
 
-## Pulse → Denomination Map
+## Accepted Denominations
 
-Configured in `config.py`. Current mapping (update to match your TB74 settings):
+Configured in `config.py`. Current valid denominations (update to match your physical bill acceptor settings):
 
-| Pulses | Amount |
-| :---: | :--- |
-| 1 | PHP 10.00 |
-| 2 | PHP 20.00 |
-| 5 | PHP 50.00 |
-| 10 | PHP 100.00 |
-| 20 | PHP 200.00 |
+| Accepted Denomination |
+| :---: |
+| PHP 20.00 |
+| PHP 50.00 |
+| PHP 100.00 |
+| PHP 200.00 |
 
-To change the mapping, update `bill_pulse_map` in `app/core/config.py`.
+To change the accepted values, update `valid_denominations` in `app/core/config.py`.
 
 ---
 
@@ -390,5 +386,4 @@ uv run pytest -v
 
 ## TODOs
 
-- [ ] Pass the real money value from arduino to back-end
 - [ ] Setup real DSLRBooth software application to test the photobooth functionality

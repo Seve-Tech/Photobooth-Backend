@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.db import list_payments
 from app.core.security import verify_api_key
-from app.models.schemas import BillAcceptedEvent, PulseSignal
-from app.services.bill_acceptor import handle_pulse
+from app.models.schemas import BillAcceptedEvent, AmountSignal
+from app.services.bill_acceptor import handle_amount
 
 router = APIRouter(
     prefix="/bills",
@@ -21,21 +21,21 @@ router = APIRouter(
 )
 
 
-@router.post("/pulse", response_model=BillAcceptedEvent, status_code=201)
-async def receive_pulse(
-    pulse_count: int = Query(..., ge=1, description="Number of pulses from bill acceptor"),
+@router.post("/amount", response_model=BillAcceptedEvent, status_code=201)
+async def receive_amount(
+    amount: float = Query(..., ge=0.0, description="Amount received in PHP"),
     session_id: str | None = Query(default=None, description="Active session ID"),
 ) -> BillAcceptedEvent:
     """
-    Receive a pulse signal via HTTP (alternative to WebSocket).
+    Receive an amount signal via HTTP (alternative to WebSocket).
 
     Useful for:
     - Testing without a WebSocket client
     - Fallback if WebSocket is unavailable
     - The Arduino bridge can POST here if WS is not implemented on that side
     """
-    signal = PulseSignal(pulse_count=pulse_count, received_at=datetime.utcnow())
-    event = await handle_pulse(signal, session_id=session_id)
+    signal = AmountSignal(amount=amount, received_at=datetime.utcnow())
+    event = await handle_amount(signal, session_id=session_id)
     return event
 
 

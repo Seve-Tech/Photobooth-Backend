@@ -20,11 +20,18 @@ To find your Arduino's port:
     Linux:    ls /dev/ttyUSB* or ls /dev/ttyACM*
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to sys.path to allow running from subdirectories
+root_dir = Path(__file__).resolve().parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
 import argparse
 import asyncio
 import json
 import logging
-import sys
 from datetime import datetime
 
 import serial
@@ -56,18 +63,14 @@ def find_arduino_port() -> str | None:
     return None
 
 
-def build_pulse_message(pulse_count: int, session_id: str | None = None) -> str:
+def build_amount_message(amount: float) -> str:
     """Build the WebSocket JSON message the backend expects."""
     payload: dict = {
-        "pulse_count": pulse_count,
-        "received_at": datetime.utcnow().isoformat(),
-        "source": "arduino",
+        "amount": amount,
     }
-    if session_id:
-        payload["session_id"] = session_id
 
     return json.dumps({
-        "type": "pulse_received",
+        "type": "amount_received",
         "payload": payload,
         "timestamp": datetime.utcnow().isoformat(),
     })
@@ -90,30 +93,10 @@ async def run_bridge(port: str, baud: int) -> None:
 
     logger.info("Serial port open. Connecting to backend at %s ...", WS_URL)
 
-    # Track the current session ID (updated when the front-end tells us)
-    current_session_id: str | None = None
-
     while True:
         try:
             async with websockets.connect(WS_URL) as ws:
-                logger.info("Connected to backend. Waiting for Arduino pulses...")
-
-                # Background task: listen for session_updated events from the backend
-                # so we always know the active session ID
-                async def listen_for_session():
-                    nonlocal current_session_id
-                    async for raw in ws:
-                        try:
-                            msg = json.loads(raw)
-                            if msg.get("type") == "session_updated":
-                                sid = msg.get("payload", {}).get("id")
-                                if sid:
-                                    current_session_id = sid
-                                    logger.info("Active session updated: %s", sid)
-                        except Exception:
-                            pass
-
-                asyncio.create_task(listen_for_session())
+                logger.info("Connected to backend. Waiting for Arduino messages...")
 
                 # Main loop: read from serial, send to backend
                 while True:
@@ -132,18 +115,29 @@ async def run_bridge(port: str, baud: int) -> None:
 
                     logger.debug("Arduino raw: %r", line)
 
-                    if not line.isdigit():
-                        logger.warning("Ignoring non-numeric data from Arduino: %r", line)
-                        continue
+                    amount = None
+                    # Try parsing as JSON first
+                    if line.startswith("{") and line.endswith("}"):
+                        try:
+                            data = json.loads(line)
+                            amount = float(data.get("amount"))
+                        except (ValueError, KeyError, TypeError) as exc:
+                            logger.warning("Failed to parse JSON from Arduino: %r — %s", line, exc)
+                            continue
+                    else:
+                        # Otherwise, try parsing as float
+                        try:
+                            amount = float(line)
+                        except ValueError:
+                            logger.warning("Ignoring non-numeric/invalid data from Arduino: %r", line)
+                            continue
 
-                    pulse_count = int(line)
                     logger.info(
-                        "Pulse received: %d pulse(s) — forwarding to backend (session: %s)",
-                        pulse_count,
-                        current_session_id or "none",
+                        "Amount received: PHP %.2f — forwarding to backend",
+                        amount,
                     )
 
-                    msg = build_pulse_message(pulse_count, current_session_id)
+                    msg = build_amount_message(amount)
                     await ws.send(msg)
 
         except (websockets.ConnectionClosed, OSError) as exc:

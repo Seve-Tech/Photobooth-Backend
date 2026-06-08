@@ -10,6 +10,14 @@ Usage:
     python mock_arduino.py --auto               # send pulses automatically
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to sys.path to allow running from subdirectories
+root_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
 import asyncio
 import json
 import argparse
@@ -23,24 +31,19 @@ from app.core.config import settings
 SERVER_URL = f"ws://localhost:{settings.port}/ws?api_key={settings.api_key}"
 
 # Human-readable denomination labels — built from settings so it always matches config.py
-DENOMINATION_LABELS: dict[int, str] = {
-    pulses: f"PHP {int(amount)}"
-    for pulses, amount in sorted(settings.bill_pulse_map.items())
+DENOMINATION_LABELS: dict[float, str] = {
+    amount: f"PHP {int(amount)}"
+    for amount in sorted(settings.valid_denominations)
 }
 
 
-def build_pulse_message(pulse_count: int, session_id: str | None = None) -> str:
-    """Build a WSMessage JSON string for a pulse signal."""
+def build_amount_message(amount: float) -> str:
+    """Build a WSMessage JSON string for an amount signal."""
     payload: dict = {
-        "pulse_count": pulse_count,
-        "received_at": datetime.utcnow().isoformat(),
-        "source": "mock_arduino",
+        "amount": amount,
     }
-    if session_id:
-        payload["session_id"] = session_id
-
     message = {
-        "type": "pulse_received",
+        "type": "amount_received",
         "payload": payload,
         "timestamp": datetime.utcnow().isoformat(),
     }
@@ -56,10 +59,11 @@ async def listen_for_events(websocket) -> None:
             payload  = msg.get("payload", {})
 
             if msg_type == "bill_accepted":
-                status = payload.get("status")
+                status = payload.get("acceptor_status") or payload.get("status")
                 amount = payload.get("amount", 0)
-                pulses = payload.get("pulse_count")
-                print(f"\n  [SERVER] bill_accepted — pulses={pulses}, amount=PHP {amount:.2f}, status={status}")
+                pulse_count = payload.get("pulse_count")
+                pulse_str = f", pulses={pulse_count}" if pulse_count is not None else ""
+                print(f"\n  [SERVER] bill_accepted — amount=PHP {amount:.2f}, status={status}{pulse_str}")
 
             elif msg_type == "session_updated":
                 sid    = payload.get("id", "?")
@@ -89,22 +93,22 @@ async def interactive_mode(session_id: str | None) -> None:
         asyncio.create_task(listen_for_events(ws))
 
         print("Available denominations:")
-        for pulse, label in DENOMINATION_LABELS.items():
-            print(f"  {pulse} pulse(s) -> {label}")
+        for amt, label in DENOMINATION_LABELS.items():
+            print(f"  PHP {amt} -> {label}")
         valid = list(DENOMINATION_LABELS.keys())
-        print(f"\nType a pulse count {valid} and press Enter. Ctrl+C to quit.\n")
+        print(f"\nType a denomination amount {valid} and press Enter. Ctrl+C to quit.\n")
 
         loop = asyncio.get_event_loop()
 
         while True:
             try:
-                raw_input = await loop.run_in_executor(None, input, "pulse count > ")
-                pulse_count = int(raw_input.strip())
-                label = DENOMINATION_LABELS.get(pulse_count, "unknown denomination")
-                print(f"  Sending {pulse_count} pulse(s) ({label}) …")
-                await ws.send(build_pulse_message(pulse_count, session_id))
+                raw_input = await loop.run_in_executor(None, input, "amount > ")
+                amount = float(raw_input.strip())
+                label = DENOMINATION_LABELS.get(amount, "unknown denomination")
+                print(f"  Sending PHP {amount:.2f} ({label}) …")
+                await ws.send(build_amount_message(amount))
             except ValueError:
-                print(f"  Please enter a valid pulse count: {list(DENOMINATION_LABELS.keys())}")
+                print(f"  Please enter a valid amount: {list(DENOMINATION_LABELS.keys())}")
             except KeyboardInterrupt:
                 print("\nDisconnecting…")
                 break
@@ -120,9 +124,9 @@ async def auto_mode(session_id: str | None) -> None:
 
         asyncio.create_task(listen_for_events(ws))
 
-        for pulse_count, label in DENOMINATION_LABELS.items():
-            print(f"Sending {pulse_count} pulse(s) -> {label}")
-            await ws.send(build_pulse_message(pulse_count, session_id))
+        for amount, label in DENOMINATION_LABELS.items():
+            print(f"Sending PHP {amount:.2f} -> {label}")
+            await ws.send(build_amount_message(amount))
             await asyncio.sleep(2)
 
         # Give the listener time to receive the last broadcast

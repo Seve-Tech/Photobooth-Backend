@@ -36,22 +36,20 @@ class PaymentStatus(str, Enum):
 # ---------------------------------------------------------------------------
 
 
-class PulseSignal(BaseModel):
+class AmountSignal(BaseModel):
     """
-    Raw pulse signal coming from the Arduino / bill acceptor.
-    The TB74 sends N pulses per accepted bill; the pulse count
-    tells us which denomination was inserted.
+    Raw amount signal coming from the Arduino / bill acceptor.
+    The Arduino itself now translates pulse counts to the actual PHP amount.
     """
 
-    pulse_count: int = Field(..., ge=1, description="Number of pulses received")
+    amount: float = Field(..., ge=0.0, description="Amount received in PHP")
     received_at: datetime = Field(default_factory=datetime.utcnow)
     source: str = Field(default="arduino", description="Who sent this signal")
 
 
 class BillAcceptedEvent(BaseModel):
     """
-    Processed payment event derived from a PulseSignal.
-    amount is resolved using the pulse->denomination map in settings.
+    Processed payment event derived from an AmountSignal.
 
     Field guide:
       acceptor_status — hardware result: did the bill acceptor physically accept the bill?
@@ -60,7 +58,7 @@ class BillAcceptedEvent(BaseModel):
                         ("completed" / "partial" / "pending")
     """
 
-    pulse_count: int
+    pulse_count: int | None = None
     amount: float = Field(..., ge=0)
     currency: str = Field(default="PHP")
     acceptor_status: PaymentStatus          # hardware bill acceptor result
@@ -120,7 +118,7 @@ class SessionResponse(BaseModel):
 
 
 class WSMessageType(str, Enum):
-    PULSE_RECEIVED = "pulse_received"       # Raw pulse from Arduino
+    AMOUNT_RECEIVED = "amount_received"     # Raw amount from Arduino
     BILL_ACCEPTED = "bill_accepted"         # Processed & validated bill
     SESSION_UPDATED = "session_updated"     # Session state changed
     ERROR = "error"                         # Something went wrong

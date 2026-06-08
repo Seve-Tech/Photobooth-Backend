@@ -22,7 +22,7 @@ from app.db import (
 from app.models.schemas import (
     BillAcceptedEvent,
     PaymentStatus,
-    PulseSignal,
+    AmountSignal,
     SessionCreate,
     WSMessage,
     WSMessageType,
@@ -39,34 +39,33 @@ async def _log(event_type: str, message: str, severity: str = "info") -> None:
         pass
 
 
-def resolve_amount(pulse_count: int) -> float | None:
+def validate_amount(amount: float) -> bool:
     """
-    Look up the PHP amount for a given pulse count.
-    Returns None if the pulse count is not in the configured map.
+    Check if the received amount is a valid supported denomination.
     """
-    return settings.bill_pulse_map.get(pulse_count)
+    return amount in settings.valid_denominations
 
 
-async def handle_pulse(signal: PulseSignal, session_id: str | None = None) -> BillAcceptedEvent:
+async def handle_amount(signal: AmountSignal, session_id: str | None = None) -> BillAcceptedEvent:
     """
-    Core handler: receive a pulse signal, validate it, persist it,
+    Core handler: receive an amount signal, validate it, persist it,
     and notify all WebSocket listeners.
 
     Args:
-        signal:     The raw pulse data from Arduino.
+        signal:     The raw amount data from Arduino.
         session_id: The active photobooth session (if known).
 
     Returns:
         The processed BillAcceptedEvent.
     """
-    amount = resolve_amount(signal.pulse_count)
+    amount = signal.amount
 
-    if amount is None:
-        logger.warning("Unknown pulse count received: %d", signal.pulse_count)
-        await _log("bill_unknown_pulse", f"Unknown pulse count received: {signal.pulse_count}", "warning")
+    if not validate_amount(amount):
+        logger.warning("Invalid amount received: %f", amount)
+        await _log("bill_invalid_amount", f"Invalid amount received: {amount}", "warning")
         event = BillAcceptedEvent(
-            pulse_count=signal.pulse_count,
-            amount=0.0,
+            pulse_count=None,
+            amount=amount,
             acceptor_status=PaymentStatus.REJECTED,
             received_at=signal.received_at,
             session_id=session_id,
@@ -88,13 +87,12 @@ async def handle_pulse(signal: PulseSignal, session_id: str | None = None) -> Bi
                 session_id = new_session.id
 
         logger.info(
-            "Bill accepted — pulses: %d, amount: PHP %.2f, session: %s",
-            signal.pulse_count,
+            "Bill accepted — amount: PHP %.2f, session: %s",
             amount,
             session_id,
         )
         event = BillAcceptedEvent(
-            pulse_count=signal.pulse_count,
+            pulse_count=None,
             amount=amount,
             acceptor_status=PaymentStatus.VALIDATED,
             received_at=signal.received_at,
@@ -115,7 +113,7 @@ async def handle_pulse(signal: PulseSignal, session_id: str | None = None) -> Bi
     return event
 
 
-async def _persist_payment(event: BillAcceptedEvent, session_id: str, signal: PulseSignal) -> None:
+async def _persist_payment(event: BillAcceptedEvent, session_id: str, signal: AmountSignal) -> None:
     """
     Persist a validated bill payment to the database.
 
@@ -133,7 +131,7 @@ async def _persist_payment(event: BillAcceptedEvent, session_id: str, signal: Pu
         await log_bill_accepted(
             session_id=session_id,
             denomination=Decimal(str(event.amount)),
-            raw_signal=str(signal.pulse_count),
+            raw_signal=f"amount:{signal.amount}",
             hardware_status="accepted",
         )
 

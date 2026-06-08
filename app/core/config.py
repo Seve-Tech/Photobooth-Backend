@@ -36,17 +36,10 @@ class Settings(BaseSettings):
     branch_id: int = Field(default=1, alias="BRANCH_ID")
     unit_id: int = Field(default=1, alias="UNIT_ID")
 
-    # Bill acceptor pulse config
-    # AGmarketing TB74 sends N pulses per denomination.
-    # Map: pulse_count -> amount in PHP (update as needed)
-    bill_pulse_map: dict[int, float] = Field(
-        default={
-            1: 10.0,
-            2: 20.0,
-            5: 50.0,
-            10: 100.0,
-            20: 200.0,
-        }
+    # Bill acceptor amount config
+    # Accepted bill and coin denominations in PHP
+    valid_denominations: list[float] = Field(
+        default=[20.0, 50.0, 100.0, 200.0]
     )
 
     # DSLRBooth Integration
