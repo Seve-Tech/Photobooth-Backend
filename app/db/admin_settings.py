@@ -53,15 +53,16 @@ async def upsert_admin_pin(unit_id: int, new_hash: str) -> None:
         await conn.execute(query, unit_id, new_hash, now)
 
 
-async def get_default_theme(unit_id: int) -> str:
+async def get_default_theme(unit_id: int) -> dict:
     """
-    Fetch the default theme configured for the given unit.
-    Returns 'neon' if not configured yet.
+    Fetch the default theme configuration for the given unit.
     """
     pool = get_pool()
 
     query = """
-        SELECT default_theme
+        SELECT default_theme, plain_theme_name, plain_theme_bg_color, plain_theme_text_color,
+               plain_theme_font_family, plain_theme_font_family_subtitle,
+               plain_theme_font_family_body, active_plain_theme_id
         FROM admin_settings
         WHERE unit_id = $1
         LIMIT 1
@@ -70,10 +71,25 @@ async def get_default_theme(unit_id: int) -> str:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(query, unit_id)
 
-    return row["default_theme"] if row and row["default_theme"] else "neon"
+    if row:
+        res = dict(row)
+        if not res.get("default_theme"):
+            res["default_theme"] = "neon"
+        return res
+    return {"default_theme": "neon"}
 
 
-async def update_default_theme(unit_id: int, theme: str) -> None:
+async def update_default_theme(
+    unit_id: int,
+    theme: str,
+    plain_theme_name: str | None = None,
+    plain_theme_bg_color: str | None = None,
+    plain_theme_text_color: str | None = None,
+    plain_theme_font_family: str | None = None,
+    plain_theme_font_family_subtitle: str | None = None,
+    plain_theme_font_family_body: str | None = None,
+    active_plain_theme_id: str | None = None,
+) -> None:
     """
     Update the default theme for the given unit.
     """
@@ -82,10 +98,30 @@ async def update_default_theme(unit_id: int, theme: str) -> None:
 
     query = """
         UPDATE admin_settings
-        SET default_theme = $1, updated_at = $2
-        WHERE unit_id = $3
+        SET default_theme = $1,
+            plain_theme_name = COALESCE($2, plain_theme_name),
+            plain_theme_bg_color = COALESCE($3, plain_theme_bg_color),
+            plain_theme_text_color = COALESCE($4, plain_theme_text_color),
+            plain_theme_font_family = COALESCE($5, plain_theme_font_family),
+            plain_theme_font_family_subtitle = COALESCE($6, plain_theme_font_family_subtitle),
+            plain_theme_font_family_body = COALESCE($7, plain_theme_font_family_body),
+            active_plain_theme_id = COALESCE($8, active_plain_theme_id),
+            updated_at = $9
+        WHERE unit_id = $10
     """
 
     async with pool.acquire() as conn:
-        await conn.execute(query, theme, now, unit_id)
+        await conn.execute(
+            query,
+            theme,
+            plain_theme_name,
+            plain_theme_bg_color,
+            plain_theme_text_color,
+            plain_theme_font_family,
+            plain_theme_font_family_subtitle,
+            plain_theme_font_family_body,
+            active_plain_theme_id,
+            now,
+            unit_id,
+        )
 

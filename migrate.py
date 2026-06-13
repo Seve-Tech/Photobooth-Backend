@@ -217,15 +217,31 @@ async def create_tables() -> None:
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS admin_settings (
-                id            SERIAL PRIMARY KEY,
-                unit_id       INT  NOT NULL REFERENCES photobooth_units(id) UNIQUE,
-                pin_hash      TEXT NOT NULL,
-                default_theme VARCHAR(50) NOT NULL DEFAULT 'neon',
-                updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+                id                               SERIAL PRIMARY KEY,
+                unit_id                          INT  NOT NULL REFERENCES photobooth_units(id) UNIQUE,
+                pin_hash                         TEXT NOT NULL,
+                default_theme                    VARCHAR(50) NOT NULL DEFAULT 'neon',
+                plain_theme_name                 VARCHAR(100),
+                plain_theme_bg_color             VARCHAR(20),
+                plain_theme_text_color           VARCHAR(20),
+                plain_theme_font_family          VARCHAR(100),
+                plain_theme_font_family_subtitle VARCHAR(100),
+                plain_theme_font_family_body     VARCHAR(100),
+                active_plain_theme_id            VARCHAR(100),
+                updated_at                       TIMESTAMP NOT NULL DEFAULT NOW()
             );
 
             ALTER TABLE admin_settings
             ADD COLUMN IF NOT EXISTS default_theme VARCHAR(50) NOT NULL DEFAULT 'neon';
+
+            ALTER TABLE admin_settings
+            ADD COLUMN IF NOT EXISTS plain_theme_name VARCHAR(100),
+            ADD COLUMN IF NOT EXISTS plain_theme_bg_color VARCHAR(20),
+            ADD COLUMN IF NOT EXISTS plain_theme_text_color VARCHAR(20),
+            ADD COLUMN IF NOT EXISTS plain_theme_font_family VARCHAR(100),
+            ADD COLUMN IF NOT EXISTS plain_theme_font_family_subtitle VARCHAR(100),
+            ADD COLUMN IF NOT EXISTS plain_theme_font_family_body VARCHAR(100),
+            ADD COLUMN IF NOT EXISTS active_plain_theme_id VARCHAR(100);
         """)
         print("[+] Table 'admin_settings' ready.")
 

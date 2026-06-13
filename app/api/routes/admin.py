@@ -202,8 +202,8 @@ async def get_kiosk_default_theme() -> dict:
     """
     Return the default theme configured for this unit.
     """
-    theme = await get_default_theme(settings.unit_id)
-    return {"default_theme": theme}
+    theme_data = await get_default_theme(settings.unit_id)
+    return theme_data
 
 
 @router.patch(
@@ -215,12 +215,23 @@ async def update_kiosk_default_theme(body: ThemeUpdate) -> dict:
     """
     Update the default theme configured for this unit.
     """
-    valid_themes = {"neon", "chibi", "luxury", "retro", "flowery"}
+    valid_themes = {"neon", "chibi", "luxury", "retro", "flowery", "plain"}
     if body.theme not in valid_themes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid theme. Must be one of {valid_themes}",
         )
-    await update_default_theme(settings.unit_id, body.theme)
+    await update_default_theme(
+        settings.unit_id,
+        body.theme,
+        body.plain_theme_name,
+        body.plain_theme_bg_color,
+        body.plain_theme_text_color,
+        body.plain_theme_font_family,
+        body.plain_theme_font_family_subtitle,
+        body.plain_theme_font_family_body,
+        body.active_plain_theme_id,
+    )
     logger.info("Default theme updated to '%s' for unit %d.", body.theme, settings.unit_id)
-    return {"default_theme": body.theme}
+    theme_data = await get_default_theme(settings.unit_id)
+    return theme_data

@@ -43,7 +43,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await conn.execute(
             "ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS default_theme VARCHAR(50) NOT NULL DEFAULT 'neon';"
         )
-    logger.info("Database schema check complete (default_theme ready).")
+        await conn.execute(
+            "ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS plain_theme_name VARCHAR(100);"
+        )
+        await conn.execute(
+            "ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS plain_theme_bg_color VARCHAR(20);"
+        )
+        await conn.execute(
+            "ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS plain_theme_text_color VARCHAR(20);"
+        )
+        await conn.execute(
+            "ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS plain_theme_font_family VARCHAR(100);"
+        )
+        await conn.execute(
+            "ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS plain_theme_font_family_subtitle VARCHAR(100);"
+        )
+        await conn.execute(
+            "ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS plain_theme_font_family_body VARCHAR(100);"
+        )
+        await conn.execute(
+            "ALTER TABLE admin_settings ADD COLUMN IF NOT EXISTS active_plain_theme_id VARCHAR(100);"
+        )
+    logger.info("Database schema check complete (default_theme and plain themes ready).")
 
     existing_hash = await get_admin_pin_hash(settings.unit_id)
     if existing_hash is None:

@@ -196,6 +196,13 @@ class PackagePriceUpdate(BaseModel):
 class ThemeUpdate(BaseModel):
     """Payload to update the default kiosk theme from the admin dashboard."""
 
-    theme: str = Field(..., description="Theme name (e.g. 'neon', 'chibi', 'luxury', 'retro', 'flowery')")
+    theme: str = Field(..., description="Theme name (e.g. 'neon', 'chibi', 'luxury', 'retro', 'flowery', 'plain')")
+    plain_theme_name: str | None = None
+    plain_theme_bg_color: str | None = None
+    plain_theme_text_color: str | None = None
+    plain_theme_font_family: str | None = None
+    plain_theme_font_family_subtitle: str | None = None
+    plain_theme_font_family_body: str | None = None
+    active_plain_theme_id: str | None = None
 
 
