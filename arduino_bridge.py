@@ -6,9 +6,12 @@ them to the FastAPI backend as WebSocket messages.
 
 How it works:
   1. Arduino counts pulses from the TB74 bill acceptor
-  2. Arduino sends the count as plain text over USB: "3\n"
-  3. This script reads that number from the USB port
-  4. Converts it to a WebSocket message and sends to the backend
+  2. Arduino sends incremental amounts over USB (e.g. "10\n" per pulse)
+  3. This script ACCUMULATES those amounts into a running total
+  4. After a short idle window (PULSE_DEBOUNCE_S) with no new pulses,
+     the total is sent as a single consolidated WebSocket message.
+     This prevents the frontend from seeing partial/incremental updates
+     mid-insertion and ensures one clean broadcast per bill.
 
 Usage:
     python arduino_bridge.py                        # auto-detect serial port
@@ -48,6 +51,12 @@ logger = logging.getLogger(__name__)
 
 WS_URL = f"ws://localhost:{settings.port}/ws?api_key={settings.api_key}"
 
+# ── Pulse accumulator config ──────────────────────────────────────────────────
+# How long (seconds) to wait after the last pulse before flushing the
+# accumulated total to the backend.  400 ms works well for most bill
+# acceptors; raise it if you still see split broadcasts.
+PULSE_DEBOUNCE_S: float = 0.4
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -82,6 +91,14 @@ async def run_bridge(port: str, baud: int) -> None:
     """
     Open the serial port and WebSocket connection, then relay messages forever.
     Reconnects automatically if either connection drops.
+
+    Pulse accumulation strategy
+    ---------------------------
+    The Arduino may send multiple incremental amounts for a single bill
+    (e.g. five "10" lines for a ₱50 note).  Rather than forwarding each
+    pulse immediately — which would cause the frontend to display partial
+    amounts — we accumulate all pulses into a running total and only
+    broadcast once the serial line has been idle for PULSE_DEBOUNCE_S seconds.
     """
     logger.info("Opening serial port %s at %d baud...", port, baud)
 
@@ -98,7 +115,24 @@ async def run_bridge(port: str, baud: int) -> None:
             async with websockets.connect(WS_URL) as ws:
                 logger.info("Connected to backend. Waiting for Arduino messages...")
 
-                # Main loop: read from serial, send to backend
+                # Accumulator state
+                accumulated: float = 0.0      # running total for current bill
+                flush_task: asyncio.Task | None = None  # debounce timer task
+
+                async def flush_accumulated() -> None:
+                    """Wait for the debounce window, then send the accumulated total."""
+                    nonlocal accumulated
+                    await asyncio.sleep(PULSE_DEBOUNCE_S)
+                    total = accumulated
+                    accumulated = 0.0
+                    logger.info(
+                        "Pulse window closed — flushing accumulated total: PHP %.2f",
+                        total,
+                    )
+                    msg = build_amount_message(total)
+                    await ws.send(msg)
+
+                # Main loop: read from serial, accumulate, debounce-flush
                 while True:
                     # readline() blocks up to timeout=1s, returns b"" if nothing arrives
                     raw_line = await asyncio.get_event_loop().run_in_executor(
@@ -132,13 +166,20 @@ async def run_bridge(port: str, baud: int) -> None:
                             logger.warning("Ignoring non-numeric/invalid data from Arduino: %r", line)
                             continue
 
+                    # ── Accumulate and (re)start the debounce timer ──────────
+                    accumulated += amount
                     logger.info(
-                        "Amount received: PHP %.2f — forwarding to backend",
+                        "Pulse received: +PHP %.2f | Running total: PHP %.2f (debouncing %.0fms...)",
                         amount,
+                        accumulated,
+                        PULSE_DEBOUNCE_S * 1000,
                     )
 
-                    msg = build_amount_message(amount)
-                    await ws.send(msg)
+                    # Cancel any pending flush and restart the window
+                    if flush_task and not flush_task.done():
+                        flush_task.cancel()
+
+                    flush_task = asyncio.create_task(flush_accumulated())
 
         except (websockets.ConnectionClosed, OSError) as exc:
             logger.warning("WebSocket disconnected: %s — retrying in 3s...", exc)
