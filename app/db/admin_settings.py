@@ -62,7 +62,9 @@ async def get_default_theme(unit_id: int) -> dict:
     query = """
         SELECT default_theme, plain_theme_name, plain_theme_bg_color, plain_theme_text_color,
                plain_theme_font_family, plain_theme_font_family_subtitle,
-               plain_theme_font_family_body, active_plain_theme_id
+               plain_theme_font_family_body, plain_theme_text_title,
+               plain_theme_text_subtitle, plain_theme_text_header, plain_theme_text_payment,
+               plain_theme_text_instruction, active_plain_theme_id
         FROM admin_settings
         WHERE unit_id = $1
         LIMIT 1
@@ -88,6 +90,11 @@ async def update_default_theme(
     plain_theme_font_family: str | None = None,
     plain_theme_font_family_subtitle: str | None = None,
     plain_theme_font_family_body: str | None = None,
+    plain_theme_text_title: str | None = None,
+    plain_theme_text_subtitle: str | None = None,
+    plain_theme_text_header: str | None = None,
+    plain_theme_text_payment: str | None = None,
+    plain_theme_text_instruction: str | None = None,
     active_plain_theme_id: str | None = None,
 ) -> None:
     """
@@ -105,9 +112,14 @@ async def update_default_theme(
             plain_theme_font_family = COALESCE($5, plain_theme_font_family),
             plain_theme_font_family_subtitle = COALESCE($6, plain_theme_font_family_subtitle),
             plain_theme_font_family_body = COALESCE($7, plain_theme_font_family_body),
-            active_plain_theme_id = COALESCE($8, active_plain_theme_id),
-            updated_at = $9
-        WHERE unit_id = $10
+            plain_theme_text_title = COALESCE($8, plain_theme_text_title),
+            plain_theme_text_subtitle = COALESCE($9, plain_theme_text_subtitle),
+            plain_theme_text_header = COALESCE($10, plain_theme_text_header),
+            plain_theme_text_payment = COALESCE($11, plain_theme_text_payment),
+            plain_theme_text_instruction = COALESCE($12, plain_theme_text_instruction),
+            active_plain_theme_id = COALESCE($13, active_plain_theme_id),
+            updated_at = $14
+        WHERE unit_id = $15
     """
 
     async with pool.acquire() as conn:
@@ -120,6 +132,11 @@ async def update_default_theme(
             plain_theme_font_family,
             plain_theme_font_family_subtitle,
             plain_theme_font_family_body,
+            plain_theme_text_title,
+            plain_theme_text_subtitle,
+            plain_theme_text_header,
+            plain_theme_text_payment,
+            plain_theme_text_instruction,
             active_plain_theme_id,
             now,
             unit_id,

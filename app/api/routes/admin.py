@@ -230,6 +230,11 @@ async def update_kiosk_default_theme(body: ThemeUpdate) -> dict:
         body.plain_theme_font_family,
         body.plain_theme_font_family_subtitle,
         body.plain_theme_font_family_body,
+        body.plain_theme_text_title,
+        body.plain_theme_text_subtitle,
+        body.plain_theme_text_header,
+        body.plain_theme_text_payment,
+        body.plain_theme_text_instruction,
         body.active_plain_theme_id,
     )
     logger.info("Default theme updated to '%s' for unit %d.", body.theme, settings.unit_id)

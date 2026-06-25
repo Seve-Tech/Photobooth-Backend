@@ -227,6 +227,11 @@ async def create_tables() -> None:
                 plain_theme_font_family          VARCHAR(100),
                 plain_theme_font_family_subtitle VARCHAR(100),
                 plain_theme_font_family_body     VARCHAR(100),
+                plain_theme_text_title           VARCHAR(255) DEFAULT 'Memory Box',
+                plain_theme_text_subtitle        VARCHAR(255) DEFAULT 'Photobooth',
+                plain_theme_text_header          VARCHAR(255) DEFAULT 'MAGNIFIED Memories',
+                plain_theme_text_payment         VARCHAR(255) DEFAULT 'PAYMENT',
+                plain_theme_text_instruction     VARCHAR(255) DEFAULT 'PLEASE INSERT CASH',
                 active_plain_theme_id            VARCHAR(100),
                 updated_at                       TIMESTAMP NOT NULL DEFAULT NOW()
             );
@@ -241,6 +246,11 @@ async def create_tables() -> None:
             ADD COLUMN IF NOT EXISTS plain_theme_font_family VARCHAR(100),
             ADD COLUMN IF NOT EXISTS plain_theme_font_family_subtitle VARCHAR(100),
             ADD COLUMN IF NOT EXISTS plain_theme_font_family_body VARCHAR(100),
+            ADD COLUMN IF NOT EXISTS plain_theme_text_title VARCHAR(255) DEFAULT 'Memory Box',
+            ADD COLUMN IF NOT EXISTS plain_theme_text_subtitle VARCHAR(255) DEFAULT 'Photobooth',
+            ADD COLUMN IF NOT EXISTS plain_theme_text_header VARCHAR(255) DEFAULT 'MAGNIFIED Memories',
+            ADD COLUMN IF NOT EXISTS plain_theme_text_payment VARCHAR(255) DEFAULT 'PAYMENT',
+            ADD COLUMN IF NOT EXISTS plain_theme_text_instruction VARCHAR(255) DEFAULT 'PLEASE INSERT CASH',
             ADD COLUMN IF NOT EXISTS active_plain_theme_id VARCHAR(100);
         """)
         print("[+] Table 'admin_settings' ready.")

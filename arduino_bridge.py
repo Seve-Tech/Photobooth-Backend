@@ -49,7 +49,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-WS_URL = f"ws://localhost:{settings.port}/ws?api_key={settings.api_key}"
+WS_URL = f"ws://localhost:{settings.port}/ws?api_key={settings.api_key}&client_type=arduino"
 
 # ── Pulse accumulator config ──────────────────────────────────────────────────
 # How long (seconds) to wait after the last pulse before flushing the

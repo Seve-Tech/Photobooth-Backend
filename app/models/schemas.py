@@ -128,6 +128,7 @@ class WSMessageType(str, Enum):
     PHOTO_SESSION_COMPLETE = "photo_session_complete" # DSLRBooth session finished
     PHOTO_SESSION_ERROR = "photo_session_error"       # DSLRBooth session failed
     DSLRBOOTH_STATUS = "dslrbooth_status"             # DSLRBooth event webhook updates
+    HARDWARE_STATUS = "hardware_status"               # Arduino hardware connection updates
 
 
 class WSMessage(BaseModel):
@@ -203,6 +204,11 @@ class ThemeUpdate(BaseModel):
     plain_theme_font_family: str | None = None
     plain_theme_font_family_subtitle: str | None = None
     plain_theme_font_family_body: str | None = None
+    plain_theme_text_title: str | None = None
+    plain_theme_text_subtitle: str | None = None
+    plain_theme_text_header: str | None = None
+    plain_theme_text_payment: str | None = None
+    plain_theme_text_instruction: str | None = None
     active_plain_theme_id: str | None = None
 
 

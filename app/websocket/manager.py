@@ -15,6 +15,7 @@ class ConnectionManager:
     def __init__(self) -> None:
         # List of currently connected WebSocket clients
         self._active: list[WebSocket] = []
+        self.arduino_connected: bool = False
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()

@@ -40,6 +40,7 @@ async def _log(event_type: str, message: str, severity: str = "info") -> None:
 async def websocket_endpoint(
     websocket: WebSocket,
     api_key: str | None = None,
+    client_type: str | None = None,
 ) -> None:
     """
     Main WebSocket gate.
@@ -62,7 +63,16 @@ async def websocket_endpoint(
         return  # Socket is already closed; nothing more to do.
 
     await manager.connect(websocket)
-    await _log("ws_client_connected", "WebSocket client connected", "info")
+    await _log("ws_client_connected", f"WebSocket client connected (type: {client_type})", "info")
+
+    if client_type == "arduino":
+        manager.arduino_connected = True
+        status_msg = WSMessage(type=WSMessageType.HARDWARE_STATUS, payload={"connected": True})
+        await manager.broadcast(status_msg.model_dump_json())
+    else:
+        # Immediately tell new frontend clients the current arduino status
+        status_msg = WSMessage(type=WSMessageType.HARDWARE_STATUS, payload={"connected": manager.arduino_connected})
+        await manager.send_to(websocket, status_msg.model_dump_json())
 
     try:
         while True:
@@ -82,11 +92,19 @@ async def websocket_endpoint(
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         ws_rate_limiter.remove(websocket)
-        await _log("ws_client_disconnected", "WebSocket client disconnected", "info")
+        await _log("ws_client_disconnected", f"WebSocket client disconnected (type: {client_type})", "info")
     except Exception as exc:
         logger.exception("Unexpected WebSocket error: %s", exc)
         manager.disconnect(websocket)
         ws_rate_limiter.remove(websocket)
+    finally:
+        if client_type == "arduino":
+            manager.arduino_connected = False
+            status_msg = WSMessage(type=WSMessageType.HARDWARE_STATUS, payload={"connected": False})
+            # We must use asyncio.create_task to broadcast if we're in a finally block,
+            # but manager.broadcast is an async function.
+            import asyncio
+            asyncio.create_task(manager.broadcast(status_msg.model_dump_json()))
 
 
 async def _handle_message(websocket: WebSocket, raw: str) -> None:
