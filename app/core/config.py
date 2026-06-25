@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # Bill acceptor amount config
     # Accepted bill and coin denominations in PHP
     valid_denominations: list[float] = Field(
-        default=[20.0, 50.0, 100.0, 200.0]
+        default=[50.0, 100.0, 150.0, 200.0, 250.0]
     )
 
     # DSLRBooth Integration

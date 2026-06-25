@@ -57,8 +57,22 @@ WS_URL = f"ws://localhost:{settings.port}/ws?api_key={settings.api_key}"
 # acceptors; raise it if you still see split broadcasts.
 PULSE_DEBOUNCE_S: float = 0.4
 
+# How long to wait before retrying a dropped serial or WebSocket connection.
+RECONNECT_S: float = 3.0
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def close_serial(ser: serial.Serial | None) -> None:
+    """Close a serial port, ignoring errors from already-dead handles."""
+    if ser is None:
+        return
+    try:
+        if ser.is_open:
+            ser.close()
+    except Exception:
+        pass
+
 
 def find_arduino_port() -> str | None:
     """
@@ -87,7 +101,54 @@ def build_amount_message(amount: float) -> str:
 
 # ── Main bridge loop ──────────────────────────────────────────────────────────
 
-async def run_bridge(port: str, baud: int) -> None:
+async def _ensure_serial(
+    ser: serial.Serial | None,
+    port: str | None,
+    baud: int,
+    *,
+    auto_detect: bool,
+) -> tuple[serial.Serial | None, str | None]:
+    """
+    Open the serial port when needed. Re-detects the port after unplug/replug
+    when auto_detect is True.
+    """
+    if ser is not None and ser.is_open:
+        return ser, port
+
+    close_serial(ser)
+
+    current_port = port
+    if auto_detect:
+        current_port = find_arduino_port()
+        if current_port is None:
+            logger.warning(
+                "Arduino not detected — plug it in and retrying in %.0fs...",
+                RECONNECT_S,
+            )
+            return None, port
+
+    assert current_port is not None
+
+    try:
+        logger.info("Opening serial port %s at %d baud...", current_port, baud)
+        opened = serial.Serial(current_port, baud, timeout=1)
+    except serial.SerialException as exc:
+        logger.warning(
+            "Could not open serial port %s: %s — retrying in %.0fs...",
+            current_port,
+            exc,
+            RECONNECT_S,
+        )
+        return None, port
+
+    if auto_detect:
+        logger.info("Auto-detected Arduino on port: %s", current_port)
+
+    logger.info("Serial port open.")
+    return opened, current_port
+
+
+async def run_bridge(port: str | None, baud: int, *, auto_detect: bool) -> None:
     """
     Open the serial port and WebSocket connection, then relay messages forever.
     Reconnects automatically if either connection drops.
@@ -100,24 +161,62 @@ async def run_bridge(port: str, baud: int) -> None:
     amounts — we accumulate all pulses into a running total and only
     broadcast once the serial line has been idle for PULSE_DEBOUNCE_S seconds.
     """
-    logger.info("Opening serial port %s at %d baud...", port, baud)
+    logger.info("Connecting to backend at %s ...", WS_URL)
 
-    try:
-        ser = serial.Serial(port, baud, timeout=1)
-    except serial.SerialException as exc:
-        logger.error("Could not open serial port %s: %s", port, exc)
-        sys.exit(1)
-
-    logger.info("Serial port open. Connecting to backend at %s ...", WS_URL)
+    accumulated: float = 0.0  # survives reconnects so failed flushes are retried
+    ser: serial.Serial | None = None
+    current_port = port
 
     while True:
+        ser, current_port = await _ensure_serial(
+            ser, current_port, baud, auto_detect=auto_detect,
+        )
+        if ser is None:
+            await asyncio.sleep(RECONNECT_S)
+            continue
+
+        serial_lost = False
+
         try:
-            async with websockets.connect(WS_URL) as ws:
+            async with websockets.connect(
+                WS_URL,
+                ping_interval=20,
+                ping_timeout=60,
+            ) as ws:
                 logger.info("Connected to backend. Waiting for Arduino messages...")
 
-                # Accumulator state
-                accumulated: float = 0.0      # running total for current bill
                 flush_task: asyncio.Task | None = None  # debounce timer task
+                disconnect_event = asyncio.Event()
+
+                async def drain_ws() -> None:
+                    """Keep the connection alive by processing incoming frames (pings, etc.)."""
+                    try:
+                        async for _ in ws:
+                            pass
+                    except websockets.ConnectionClosed:
+                        disconnect_event.set()
+
+                async def send_total(total: float, *, retry: bool = False) -> None:
+                    nonlocal accumulated
+                    if total <= 0:
+                        return
+                    if retry:
+                        logger.info(
+                            "Retrying previously unsent total after reconnect: PHP %.2f",
+                            total,
+                        )
+                    else:
+                        logger.info(
+                            "Pulse window closed — flushing accumulated total: PHP %.2f",
+                            total,
+                        )
+                    msg = build_amount_message(total)
+                    try:
+                        await ws.send(msg)
+                    except websockets.ConnectionClosed:
+                        accumulated += total
+                        disconnect_event.set()
+                        raise
 
                 async def flush_accumulated() -> None:
                     """Wait for the debounce window, then send the accumulated total."""
@@ -125,68 +224,117 @@ async def run_bridge(port: str, baud: int) -> None:
                     await asyncio.sleep(PULSE_DEBOUNCE_S)
                     total = accumulated
                     accumulated = 0.0
-                    logger.info(
-                        "Pulse window closed — flushing accumulated total: PHP %.2f",
-                        total,
-                    )
-                    msg = build_amount_message(total)
-                    await ws.send(msg)
+                    await send_total(total)
 
-                # Main loop: read from serial, accumulate, debounce-flush
-                while True:
-                    # readline() blocks up to timeout=1s, returns b"" if nothing arrives
-                    raw_line = await asyncio.get_event_loop().run_in_executor(
-                        None, ser.readline
-                    )
+                async def retry_unsent() -> None:
+                    nonlocal accumulated
+                    total = accumulated
+                    accumulated = 0.0
+                    await send_total(total, retry=True)
 
-                    if not raw_line:
-                        continue  # timeout — nothing received, try again
+                def on_flush_done(task: asyncio.Task) -> None:
+                    if task.cancelled():
+                        return
+                    if task.exception() is not None:
+                        disconnect_event.set()
 
-                    line = raw_line.decode("utf-8", errors="ignore").strip()
+                drain_task = asyncio.create_task(drain_ws())
 
-                    if not line:
-                        continue
+                if accumulated > 0:
+                    flush_task = asyncio.create_task(retry_unsent())
+                    flush_task.add_done_callback(on_flush_done)
 
-                    logger.debug("Arduino raw: %r", line)
-
-                    amount = None
-                    # Try parsing as JSON first
-                    if line.startswith("{") and line.endswith("}"):
+                try:
+                    # Main loop: read from serial, accumulate, debounce-flush
+                    while not disconnect_event.is_set() and not serial_lost:
                         try:
-                            data = json.loads(line)
-                            amount = float(data.get("amount"))
-                        except (ValueError, KeyError, TypeError) as exc:
-                            logger.warning("Failed to parse JSON from Arduino: %r — %s", line, exc)
-                            continue
-                    else:
-                        # Otherwise, try parsing as float
-                        try:
-                            amount = float(line)
-                        except ValueError:
-                            logger.warning("Ignoring non-numeric/invalid data from Arduino: %r", line)
+                            # readline() blocks up to timeout=1s, returns b"" if nothing arrives
+                            raw_line = await asyncio.get_event_loop().run_in_executor(
+                                None, ser.readline
+                            )
+                        except (serial.SerialException, OSError) as exc:
+                            logger.warning(
+                                "Serial connection lost: %s — reconnecting...",
+                                exc,
+                            )
+                            serial_lost = True
+                            break
+
+                        if not raw_line:
+                            continue  # timeout — nothing received, try again
+
+                        line = raw_line.decode("utf-8", errors="ignore").strip()
+
+                        if not line:
                             continue
 
-                    # ── Accumulate and (re)start the debounce timer ──────────
-                    accumulated += amount
-                    logger.info(
-                        "Pulse received: +PHP %.2f | Running total: PHP %.2f (debouncing %.0fms...)",
-                        amount,
-                        accumulated,
-                        PULSE_DEBOUNCE_S * 1000,
-                    )
+                        logger.debug("Arduino raw: %r", line)
 
-                    # Cancel any pending flush and restart the window
+                        amount = None
+                        # Try parsing as JSON first
+                        if line.startswith("{") and line.endswith("}"):
+                            try:
+                                data = json.loads(line)
+                                amount = float(data.get("amount"))
+                            except (ValueError, KeyError, TypeError) as exc:
+                                logger.warning("Failed to parse JSON from Arduino: %r — %s", line, exc)
+                                continue
+                        else:
+                            # Otherwise, try parsing as float
+                            try:
+                                amount = float(line)
+                            except ValueError:
+                                logger.warning("Ignoring non-numeric/invalid data from Arduino: %r", line)
+                                continue
+
+                        # ── Accumulate and (re)start the debounce timer ──────────
+                        accumulated += amount
+                        logger.info(
+                            "Pulse received: +PHP %.2f | Running total: PHP %.2f (debouncing %.0fms...)",
+                            amount,
+                            accumulated,
+                            PULSE_DEBOUNCE_S * 1000,
+                        )
+
+                        # Cancel any pending flush and restart the window
+                        if flush_task and not flush_task.done():
+                            flush_task.cancel()
+
+                        flush_task = asyncio.create_task(flush_accumulated())
+                        flush_task.add_done_callback(on_flush_done)
+                finally:
+                    drain_task.cancel()
+                    try:
+                        await drain_task
+                    except asyncio.CancelledError:
+                        pass
                     if flush_task and not flush_task.done():
                         flush_task.cancel()
-
-                    flush_task = asyncio.create_task(flush_accumulated())
+                        try:
+                            await flush_task
+                        except (asyncio.CancelledError, websockets.ConnectionClosed):
+                            pass
 
         except (websockets.ConnectionClosed, OSError) as exc:
-            logger.warning("WebSocket disconnected: %s — retrying in 3s...", exc)
-            await asyncio.sleep(3)
+            if not serial_lost:
+                logger.warning(
+                    "WebSocket disconnected: %s — retrying in %.0fs...",
+                    exc,
+                    RECONNECT_S,
+                )
         except Exception as exc:
-            logger.exception("Unexpected error: %s — retrying in 3s...", exc)
-            await asyncio.sleep(3)
+            if not serial_lost:
+                logger.exception(
+                    "Unexpected error: %s — retrying in %.0fs...",
+                    exc,
+                    RECONNECT_S,
+                )
+
+        if serial_lost:
+            close_serial(ser)
+            ser = None
+
+        await asyncio.sleep(RECONNECT_S)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -203,19 +351,14 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    port = args.port
-    if port is None:
-        port = find_arduino_port()
-        if port is None:
-            logger.error(
-                "Could not auto-detect Arduino port. "
-                "Plug in the Arduino and try again, or specify --port manually."
-            )
-            sys.exit(1)
-        logger.info("Auto-detected Arduino on port: %s", port)
+    auto_detect = args.port is None
+    if auto_detect:
+        logger.info("Auto-detect enabled; will wait for Arduino if unplugged.")
+    else:
+        logger.info("Using serial port: %s", args.port)
 
     try:
-        asyncio.run(run_bridge(port, args.baud))
+        asyncio.run(run_bridge(args.port, args.baud, auto_detect=auto_detect))
     except KeyboardInterrupt:
         logger.info("Bridge stopped.")
 
