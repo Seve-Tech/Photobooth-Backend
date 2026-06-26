@@ -22,9 +22,9 @@ if __name__ == "__main__":
         asyncio.run(run_seed())
     else:
         uvicorn.run(
-            "main:app",
+            app,
             host=settings.host,
             port=settings.port,
-            reload=settings.debug,
+            reload=False,
             log_level="debug" if settings.debug else "info",
         )

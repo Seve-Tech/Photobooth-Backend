@@ -44,12 +44,12 @@ async def seed() -> None:
         for table in tables:
             await conn.execute(f"DROP TABLE IF EXISTS {table} CASCADE;")
             print(f"[-] Dropped table if exists: {table}")
-        
+
         print("\nRe-creating tables...")
         # Close connection so migrate can open its own, or use it directly.
         await conn.close()
         await create_tables()
-        
+
         # Reconnect for seeding
         conn = await asyncpg.connect(settings.DATABASE_URL)
         print("\nDatabase reset complete. Proceeding to seed...")
@@ -114,5 +114,9 @@ async def seed() -> None:
     print("\nSeeding complete. You can now create sessions.")
 
 
+async def main() -> None:
+    await seed()
+
+
 if __name__ == "__main__":
-    asyncio.run(seed())
+    asyncio.run(main())

@@ -1,5 +1,8 @@
 # PowerShell script to build the Photobooth executables
 
+$BackendDir = Split-Path $PSScriptRoot -Parent
+Push-Location $BackendDir
+
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "Building Photobooth Executables" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
@@ -21,16 +24,18 @@ if (-not (Get-Command pyinstaller -ErrorAction SilentlyContinue)) {
 }
 
 # Build the Arduino bridge
-Write-Host "`n[*] Building arduino-bridge.exe..." -ForegroundColor Yellow
-pyinstaller --clean --noconfirm arduino-bridge.spec
+Write-Host "`n[*] Building bill-acceptor.exe..." -ForegroundColor Yellow
+pyinstaller --onefile --name bill-acceptor arduino_bridge.py
 
 # Build the FastAPI backend
-Write-Host "`n[*] Building photobooth-backend.exe..." -ForegroundColor Yellow
-pyinstaller --clean --noconfirm main.spec
+Write-Host "`n[*] Building paywall-server.exe..." -ForegroundColor Yellow
+pyinstaller --onefile --name paywall-server main.py
 
 Write-Host "`n=========================================" -ForegroundColor Green
 Write-Host "[+] Build complete!" -ForegroundColor Green
-Write-Host "Executables are located in: $(Get-Location)\dist\" -ForegroundColor Green
-Write-Host " - dist\arduino-bridge.exe" -ForegroundColor Green
-Write-Host " - dist\photobooth-backend.exe" -ForegroundColor Green
+Write-Host "Executables are located in: $BackendDir\dist\" -ForegroundColor Green
+Write-Host " - dist\bill-acceptor.exe" -ForegroundColor Green
+Write-Host " - dist\paywall-server.exe" -ForegroundColor Green
 Write-Host "=========================================" -ForegroundColor Green
+
+Pop-Location

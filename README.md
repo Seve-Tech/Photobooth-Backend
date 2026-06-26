@@ -51,7 +51,7 @@ TB74 Bill Acceptor
 ### Key files
 
 ```
-photobooth-backend/
+paywall-server/
 ├── main.py                         # Entry point — starts the server
 ├── arduino_bridge.py               # Real hardware: reads Arduino USB → forwards to backend
 ├── seed_db.py                      # One-time DB seed (branch, unit, package)
