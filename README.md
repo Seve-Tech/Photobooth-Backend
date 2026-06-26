@@ -71,8 +71,6 @@ paywall-server/
     │   ├── sessions.py             # Session queries
     │   ├── payments.py             # Payment queries
     │   ├── bill_logs.py            # Bill acceptor hardware log queries
-    │   ├── photos.py               # Photo record queries
-    │   ├── print_jobs.py           # Print job queries
     │   ├── device_events.py        # Device event log queries
     │   ├── expenses.py             # Expense queries
     │   └── sync.py                 # Sync queue queries

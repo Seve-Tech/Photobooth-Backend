@@ -32,8 +32,6 @@ async def seed() -> None:
             "sync_queue",
             "expenses",
             "device_events",
-            "print_jobs",
-            "photos",
             "bill_acceptor_logs",
             "payments",
             "sessions",

@@ -121,35 +121,6 @@ async def create_tables() -> None:
         print("[+] Table 'bill_acceptor_logs' ready.")
 
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS photos (
-                id                  SERIAL PRIMARY KEY,
-                session_id          INT       NOT NULL REFERENCES sessions(id),
-                shot_number         INT       NOT NULL,
-                original_file_path  TEXT      NOT NULL,
-                processed_file_path TEXT,
-                thumbnail_path      TEXT,
-                captured_at         TIMESTAMP NOT NULL DEFAULT NOW(),
-                is_printed          INT       NOT NULL DEFAULT 0,
-                created_at          TIMESTAMP NOT NULL DEFAULT NOW()
-            );
-        """)
-        print("[+] Table 'photos' ready.")
-
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS print_jobs (
-                id            SERIAL PRIMARY KEY,
-                session_id    INT          NOT NULL REFERENCES sessions(id),
-                printer_name  VARCHAR(255) NOT NULL,
-                copies        INT          NOT NULL DEFAULT 1,
-                print_status  VARCHAR(50)  NOT NULL DEFAULT 'queued',
-                printed_at    TIMESTAMP,
-                error_message TEXT,
-                created_at    TIMESTAMP    NOT NULL DEFAULT NOW()
-            );
-        """)
-        print("[+] Table 'print_jobs' ready.")
-
-        await conn.execute("""
             CREATE TABLE IF NOT EXISTS device_events (
                 id         SERIAL PRIMARY KEY,
                 unit_id    INT          NOT NULL REFERENCES photobooth_units(id),
@@ -203,9 +174,6 @@ async def create_tables() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_payments_session_id
                 ON payments (session_id);
-
-            CREATE INDEX IF NOT EXISTS idx_photos_session_id
-                ON photos (session_id);
 
             CREATE INDEX IF NOT EXISTS idx_bill_acceptor_logs_session_id
                 ON bill_acceptor_logs (session_id);

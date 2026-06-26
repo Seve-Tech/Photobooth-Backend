@@ -56,19 +56,6 @@ from app.db.bill_logs import (
     get_session_total_inserted,
 )
 
-from app.db.photos import (
-    save_photo,
-    get_photo,
-    list_photos,
-    mark_photo_printed,
-)
-
-from app.db.print_jobs import (
-    create_print_job,
-    update_print_job_status,
-    list_print_jobs,
-)
-
 from app.db.device_events import (
     log_device_event,
     list_device_events,
@@ -128,13 +115,6 @@ __all__ = [
     "log_bill_accepted",
     "list_bill_logs",
     "get_session_total_inserted",
-    "save_photo",
-    "get_photo",
-    "list_photos",
-    "mark_photo_printed",
-    "create_print_job",
-    "update_print_job_status",
-    "list_print_jobs",
     "log_device_event",
     "list_device_events",
     "count_device_events",
