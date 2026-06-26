@@ -22,6 +22,7 @@ class SessionStatus(str, Enum):
     PHOTO_COMPLETE = "photo_complete" # DSLRBooth session has completed
     COMPLETED = "completed"   # Photo session done
     CANCELLED = "cancelled"   # Session was cancelled
+    VOIDED = "voided"         # Force-reset by operator; partial payments preserved
 
 
 class PaymentStatus(str, Enum):
@@ -99,6 +100,16 @@ class SessionUpdate(BaseModel):
     customer_ref: str | None = None
 
 
+class SessionOverrideRequest(BaseModel):
+    reason: str = Field(..., description="e.g. 'customer_left', 'test_payment', 'machine_error'")
+    operator_note: str | None = None
+
+
+class SessionValidityToggle(BaseModel):
+    is_valid: bool
+    operator_note: str | None = None
+
+
 class SessionResponse(BaseModel):
     """What the API returns when querying a session."""
 
@@ -110,6 +121,10 @@ class SessionResponse(BaseModel):
     package_id: int | None
     created_at: datetime
     updated_at: datetime
+    is_valid: bool = True
+    voided_at: datetime | None = None
+    operator_note: str | None = None
+    override_reason: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +144,8 @@ class WSMessageType(str, Enum):
     PHOTO_SESSION_ERROR = "photo_session_error"       # DSLRBooth session failed
     DSLRBOOTH_STATUS = "dslrbooth_status"             # DSLRBooth event webhook updates
     HARDWARE_STATUS = "hardware_status"               # Arduino hardware connection updates
+    SESSION_OVERRIDDEN = "session_overridden"         # Session was voided by operator override
+    SESSION_VALIDITY_CHANGED = "session_validity_changed" # Session validity was toggled
 
 
 class WSMessage(BaseModel):

@@ -92,6 +92,15 @@ async def create_tables() -> None:
         print("[+] Table 'sessions' ready.")
 
         await conn.execute("""
+            ALTER TABLE sessions
+            ADD COLUMN IF NOT EXISTS is_valid        BOOLEAN      NOT NULL DEFAULT TRUE,
+            ADD COLUMN IF NOT EXISTS voided_at       TIMESTAMP,
+            ADD COLUMN IF NOT EXISTS operator_note   TEXT,
+            ADD COLUMN IF NOT EXISTS override_reason VARCHAR(100);
+        """)
+        print("[+] Table 'sessions' updated with override columns.")
+
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS payments (
                 id               SERIAL PRIMARY KEY,
                 payment_uuid     UUID           NOT NULL UNIQUE,

@@ -2,18 +2,21 @@
 Admin PIN + dashboard REST endpoints.
 
 Endpoints:
-  POST  /api/v1/admin/verify-pin             — verify a PIN attempt (used by the PIN modal)
-  PATCH /api/v1/admin/pin                    — change the stored PIN (Security Settings)
-  GET   /api/v1/admin/sessions               — paginated sessions list (Transactions tab)
-  GET   /api/v1/admin/logs                   — paginated hardware/device events (Logs tab)
-  GET   /api/v1/admin/package-price          — read Package 1 current price (Settings tab)
-  PATCH /api/v1/admin/package-price          — update a package price (Settings tab)
-  GET   /api/v1/admin/theme                  — get the default theme for the kiosk
-  PATCH /api/v1/admin/theme                  — update the default theme for the kiosk
-  GET   /api/v1/admin/branches               — list all photobooth branches (Branch Management tab)
-  POST  /api/v1/admin/branches               — create a new branch (Branch Management tab)
-  PATCH /api/v1/admin/branches/{branch_id}   — update a branch (Branch Management tab)
-  DELETE /api/v1/admin/branches/{branch_id}  — delete a branch (Branch Management tab)
+POST  /api/v1/admin/verify-pin                         — verify a PIN attempt (used by the PIN modal)
+PATCH /api/v1/admin/pin                                — change the stored PIN (Security Settings)
+GET   /api/v1/admin/sessions                           — paginated sessions list (Transactions tab)
+GET   /api/v1/admin/sessions/interrupted               — list interrupted pending sessions with partial payments
+POST  /api/v1/admin/sessions/{session_id}/override     — manually void/override a stuck session
+PATCH /api/v1/admin/sessions/{session_id}/validity     — toggle validity / restore a voided session
+GET   /api/v1/admin/logs                               — paginated hardware/device events (Logs tab)
+GET   /api/v1/admin/package-price                      — read Package 1 current price (Settings tab)
+PATCH /api/v1/admin/package-price                      — update a package price (Settings tab)
+GET   /api/v1/admin/theme                              — get the default theme for the kiosk
+PATCH /api/v1/admin/theme                              — update the default theme for the kiosk
+GET   /api/v1/admin/branches                           — list all photobooth branches (Branch Management tab)
+POST  /api/v1/admin/branches                           — create a new branch (Branch Management tab)
+PATCH /api/v1/admin/branches/{branch_id}               — update a branch (Branch Management tab)
+DELETE /api/v1/admin/branches/{branch_id}              — delete a branch (Branch Management tab)
 
 All endpoints require the X-API-Key header.
 """
@@ -31,8 +34,16 @@ from app.db.admin_settings import (
     get_default_theme,
     update_default_theme,
 )
-from app.db.sessions import list_sessions, count_sessions
-from app.db.device_events import list_device_events, count_device_events
+from app.db.sessions import (
+    list_sessions,
+    count_sessions,
+    get_session,
+    override_session,
+    set_session_validity,
+    list_interrupted_sessions,
+    count_interrupted_sessions,
+)
+from app.db.device_events import list_device_events, count_device_events, log_device_event
 from app.db.packages import update_package_price, get_package_price
 from app.db.branches import (
     create_branch,
@@ -51,7 +62,13 @@ from app.models.schemas import (
     BranchCreate,
     BranchUpdate,
     BranchResponse,
+    SessionResponse,
+    SessionOverrideRequest,
+    SessionValidityToggle,
+    WSMessage,
+    WSMessageType,
 )
+from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +159,120 @@ async def admin_list_sessions(
     items = await list_sessions(limit=limit, offset=offset)
     total = await count_sessions()
     return PaginatedSessions(items=items, total=total)
+
+
+@router.get(
+    "/sessions/interrupted",
+    response_model=PaginatedSessions,
+    summary="List interrupted pending sessions with partial payments",
+)
+async def admin_list_interrupted_sessions(
+    limit: int = Query(default=100, ge=1, le=500, description="Max rows to return"),
+    offset: int = Query(default=0, ge=0, description="Number of rows to skip"),
+) -> PaginatedSessions:
+    """
+    Return a paginated list of sessions that are PENDING with partial payments
+    (stuck sessions).
+    """
+    items = await list_interrupted_sessions(limit=limit, offset=offset)
+    total = await count_interrupted_sessions()
+    return PaginatedSessions(items=items, total=total)
+
+
+@router.post(
+    "/sessions/{session_id}/override",
+    response_model=SessionResponse,
+    summary="Force-void an active/pending session"
+)
+async def admin_override_session(
+    session_id: str,
+    body: SessionOverrideRequest,
+) -> SessionResponse:
+    """
+    Manually override and void an interrupted or stuck session.
+    Broadcasts a SESSION_OVERRIDDEN websocket message so the kiosk interface resets.
+    """
+    # Verify session existence
+    session = await get_session(session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{session_id}' not found.",
+        )
+
+    # Call override function
+    updated = await override_session(
+        session_id=session_id,
+        reason=body.reason,
+        operator_note=body.operator_note,
+    )
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Session cannot be overridden (e.g. already completed or voided).",
+        )
+
+    # Log device event
+    try:
+        await log_device_event(
+            unit_id=settings.unit_id,
+            event_type="session_override",
+            severity="warning",
+            message=f"Session {session_id} voided by operator. Reason: {body.reason}. Note: {body.operator_note or 'None'}",
+        )
+    except Exception as exc:
+        logger.error("Failed to log override device event: %s", exc)
+
+    # Broadcast to WebSockets
+    msg = WSMessage(
+        type=WSMessageType.SESSION_OVERRIDDEN,
+        payload=updated.model_dump(mode="json"),
+    )
+    await manager.broadcast(msg.model_dump_json())
+
+    return updated
+
+
+@router.patch(
+    "/sessions/{session_id}/validity",
+    response_model=SessionResponse,
+    summary="Toggle validity of a session"
+)
+async def admin_toggle_session_validity(
+    session_id: str,
+    body: SessionValidityToggle,
+) -> SessionResponse:
+    """
+    Manually toggle the validity flag of a session.
+    If is_valid is set to true and the session was voided, it will be restored to PENDING.
+    """
+    session = await get_session(session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{session_id}' not found.",
+        )
+
+    updated = await set_session_validity(
+        session_id=session_id,
+        is_valid=body.is_valid,
+        operator_note=body.operator_note,
+    )
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update session validity.",
+        )
+
+    # Broadcast to WebSockets
+    msg = WSMessage(
+        type=WSMessageType.SESSION_VALIDITY_CHANGED,
+        payload=updated.model_dump(mode="json"),
+    )
+    await manager.broadcast(msg.model_dump_json())
+
+    return updated
+
 
 
 @router.get(

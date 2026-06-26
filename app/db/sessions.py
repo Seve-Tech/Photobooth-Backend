@@ -8,15 +8,20 @@ from app.models.schemas import SessionCreate, SessionResponse, SessionStatus, Se
  
 
 def _row_to_session_response(row) -> SessionResponse:
+    row_dict = dict(row)
     return SessionResponse(
-        id=str(row["session_uuid"]),
-        status=SessionStatus(row["session_status"]),
-        total_paid=float(row["paid_amount"] or 0.0),
+        id=str(row_dict["session_uuid"]),
+        status=SessionStatus(row_dict["session_status"]),
+        total_paid=float(row_dict["paid_amount"] or 0.0),
         currency="PHP",
-        customer_ref=row.get("customer_ref"),
-        package_id=row["package_id"],
-        created_at=localize_datetime(row["created_at"]),
-        updated_at=localize_datetime(row["updated_at"]),
+        customer_ref=row_dict.get("customer_ref"),
+        package_id=row_dict["package_id"],
+        created_at=localize_datetime(row_dict["created_at"]),
+        updated_at=localize_datetime(row_dict["updated_at"]),
+        is_valid=row_dict.get("is_valid", True),
+        voided_at=localize_datetime(row_dict.get("voided_at")),
+        operator_note=row_dict.get("operator_note"),
+        override_reason=row_dict.get("override_reason"),
     )
 
 
@@ -274,7 +279,9 @@ async def get_active_pending_session() -> SessionResponse | None:
     pool = get_pool()
     query = """
         SELECT * FROM sessions
-        WHERE session_status = 'pending' AND payment_status != 'paid'
+        WHERE session_status = 'pending'
+          AND payment_status != 'paid'
+          AND is_valid = TRUE
         ORDER BY created_at DESC
         LIMIT 1
     """
@@ -296,3 +303,101 @@ async def get_active_photo_session() -> SessionResponse | None:
         row = await conn.fetchrow(query)
 
     return _row_to_session_response(row) if row else None
+
+
+async def override_session(session_id: str, reason: str, operator_note: str | None = None) -> SessionResponse | None:
+    pool = get_pool()
+    now = datetime.utcnow()
+
+    # First fetch the session to verify state
+    session = await get_session(session_id)
+    if session is None:
+        return None
+
+    if session.status in (SessionStatus.COMPLETED, SessionStatus.VOIDED):
+        return None
+
+    query = """
+        UPDATE sessions
+        SET
+            session_status  = 'voided',
+            is_valid        = FALSE,
+            voided_at       = $1,
+            override_reason = $2,
+            operator_note   = $3,
+            updated_at      = $1
+        WHERE session_uuid = $4
+        RETURNING *
+    """
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query, now, reason, operator_note, uuid.UUID(session_id))
+
+    return _row_to_session_response(row) if row else None
+
+
+async def set_session_validity(session_id: str, is_valid: bool, operator_note: str | None = None) -> SessionResponse | None:
+    pool = get_pool()
+    now = datetime.utcnow()
+
+    session = await get_session(session_id)
+    if session is None:
+        return None
+
+    if is_valid and session.status == SessionStatus.VOIDED:
+        query = """
+            UPDATE sessions
+            SET
+                is_valid        = TRUE,
+                session_status  = 'pending',
+                voided_at       = NULL,
+                override_reason = NULL,
+                operator_note   = $1,
+                updated_at      = $2
+            WHERE session_uuid  = $3
+            RETURNING *
+        """
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(query, operator_note, now, uuid.UUID(session_id))
+    else:
+        query = """
+            UPDATE sessions
+            SET
+                is_valid      = $1,
+                operator_note = $2,
+                updated_at    = $3
+            WHERE session_uuid = $4
+            RETURNING *
+        """
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(query, is_valid, operator_note, now, uuid.UUID(session_id))
+
+    return _row_to_session_response(row) if row else None
+
+
+async def list_interrupted_sessions(limit: int = 100, offset: int = 0) -> list[SessionResponse]:
+    pool = get_pool()
+    query = """
+        SELECT * FROM sessions
+        WHERE session_status = 'pending'
+          AND payment_status = 'partial'
+          AND is_valid = TRUE
+        ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(query, limit, offset)
+    return [_row_to_session_response(r) for r in rows]
+
+
+async def count_interrupted_sessions() -> int:
+    pool = get_pool()
+    query = """
+        SELECT COUNT(*) FROM sessions
+        WHERE session_status = 'pending'
+          AND payment_status = 'partial'
+          AND is_valid = TRUE
+    """
+    async with pool.acquire() as conn:
+        return await conn.fetchval(query) or 0
+

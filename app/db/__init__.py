@@ -43,6 +43,10 @@ from app.db.sessions import (
     complete_session,
     get_active_pending_session,
     get_active_photo_session,
+    override_session,
+    set_session_validity,
+    list_interrupted_sessions,
+    count_interrupted_sessions,
 )
 
 from app.db.payments import (
@@ -110,6 +114,10 @@ __all__ = [
     "complete_session",
     "get_active_pending_session",
     "get_active_photo_session",
+    "override_session",
+    "set_session_validity",
+    "list_interrupted_sessions",
+    "count_interrupted_sessions",
     "save_payment",
     "list_payments",
     "log_bill_accepted",
