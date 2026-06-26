@@ -212,3 +212,41 @@ class ThemeUpdate(BaseModel):
     active_plain_theme_id: str | None = None
 
 
+# ---------------------------------------------------------------------------
+# Branch models
+# ---------------------------------------------------------------------------
+
+
+class BranchCreate(BaseModel):
+    """Payload to create a new branch."""
+
+    branch_code: str = Field(..., max_length=50)
+    branch_name: str = Field(..., max_length=255)
+    owner_name: str = Field(..., max_length=255)
+    contact_number: str = Field(..., max_length=50)
+    address: str
+
+
+class BranchUpdate(BaseModel):
+    """Payload to update an existing branch."""
+
+    branch_code: str | None = Field(None, max_length=50)
+    branch_name: str | None = Field(None, max_length=255)
+    owner_name: str | None = Field(None, max_length=255)
+    contact_number: str | None = Field(None, max_length=50)
+    address: str | None = None
+
+
+class BranchResponse(BaseModel):
+    """What the API returns when querying a branch."""
+
+    id: int
+    branch_code: str
+    branch_name: str
+    owner_name: str
+    contact_number: str
+    address: str
+    created_at: datetime
+
+
+

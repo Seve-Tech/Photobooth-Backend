@@ -2,14 +2,18 @@
 Admin PIN + dashboard REST endpoints.
 
 Endpoints:
-  POST  /api/v1/admin/verify-pin       — verify a PIN attempt (used by the PIN modal)
-  PATCH /api/v1/admin/pin              — change the stored PIN (Security Settings)
-  GET   /api/v1/admin/sessions         — paginated sessions list (Transactions tab)
-  GET   /api/v1/admin/logs             — paginated hardware/device events (Logs tab)
-  GET   /api/v1/admin/package-price    — read Package 1 current price (Settings tab)
-  PATCH /api/v1/admin/package-price    — update a package price (Settings tab)
-  GET   /api/v1/admin/theme            — get the default theme for the kiosk
-  PATCH /api/v1/admin/theme            — update the default theme for the kiosk
+  POST  /api/v1/admin/verify-pin             — verify a PIN attempt (used by the PIN modal)
+  PATCH /api/v1/admin/pin                    — change the stored PIN (Security Settings)
+  GET   /api/v1/admin/sessions               — paginated sessions list (Transactions tab)
+  GET   /api/v1/admin/logs                   — paginated hardware/device events (Logs tab)
+  GET   /api/v1/admin/package-price          — read Package 1 current price (Settings tab)
+  PATCH /api/v1/admin/package-price          — update a package price (Settings tab)
+  GET   /api/v1/admin/theme                  — get the default theme for the kiosk
+  PATCH /api/v1/admin/theme                  — update the default theme for the kiosk
+  GET   /api/v1/admin/branches               — list all photobooth branches (Branch Management tab)
+  POST  /api/v1/admin/branches               — create a new branch (Branch Management tab)
+  PATCH /api/v1/admin/branches/{branch_id}   — update a branch (Branch Management tab)
+  DELETE /api/v1/admin/branches/{branch_id}  — delete a branch (Branch Management tab)
 
 All endpoints require the X-API-Key header.
 """
@@ -30,12 +34,23 @@ from app.db.admin_settings import (
 from app.db.sessions import list_sessions, count_sessions
 from app.db.device_events import list_device_events, count_device_events
 from app.db.packages import update_package_price, get_package_price
+from app.db.branches import (
+    create_branch,
+    get_branch,
+    get_branch_by_code,
+    list_branches,
+    update_branch,
+    delete_branch,
+)
 from app.models.schemas import (
     AdminPinVerifyRequest,
     AdminPinChangeRequest,
     PaginatedSessions,
     PackagePriceUpdate,
     ThemeUpdate,
+    BranchCreate,
+    BranchUpdate,
+    BranchResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +65,7 @@ router = APIRouter(
 # every request when no PIN row exists in the DB yet.
 _DEFAULT_PIN = "000000"
 
+#--------PIN ENDPOINTS--------
 
 @router.post(
     "/verify-pin",
@@ -108,6 +124,8 @@ async def change_admin_pin(body: AdminPinChangeRequest) -> dict:
     return {"detail": "PIN updated successfully."}
 
 
+#--------SESSIONS ENDPOINTS--------
+
 @router.get(
     "/sessions",
     response_model=PaginatedSessions,
@@ -148,6 +166,8 @@ async def admin_list_logs(
     total = await count_device_events(unit_id=settings.unit_id, severity=severity)
     return {"items": items, "total": total}
 
+
+#--------PACKAGES ENDPOINTS--------
 
 @router.get(
     "/package-price",
@@ -193,6 +213,8 @@ async def update_admin_package_price(body: PackagePriceUpdate) -> dict:
     )
     return {"id": row["id"], "package_name": row["package_name"], "price": float(row["price"])}
 
+
+#--------THEME ENDPOINTS--------
 
 @router.get(
     "/theme",
@@ -240,3 +262,115 @@ async def update_kiosk_default_theme(body: ThemeUpdate) -> dict:
     logger.info("Default theme updated to '%s' for unit %d.", body.theme, settings.unit_id)
     theme_data = await get_default_theme(settings.unit_id)
     return theme_data
+
+
+#--------BRANCH ENDPOINTS--------
+
+@router.get(
+    "/branches",
+    response_model=list[BranchResponse],
+    summary="List all branches",
+)
+async def admin_list_branches() -> list[dict]:
+    """
+    Return a list of all branches, ordered by name.
+    """
+    return await list_branches()
+
+
+@router.post(
+    "/branches",
+    response_model=BranchResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new branch",
+)
+async def admin_create_branch(body: BranchCreate) -> dict:
+    """
+    Create a new branch in the database.
+    """
+    # Check if branch code already exists
+    existing = await get_branch_by_code(body.branch_code)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Branch code '{body.branch_code}' already exists.",
+        )
+    branch = await create_branch(
+        branch_code=body.branch_code,
+        branch_name=body.branch_name,
+        owner_name=body.owner_name,
+        contact_number=body.contact_number,
+        address=body.address,
+    )
+    logger.info("Branch '%s' created (unit %d).", body.branch_name, settings.unit_id)
+    return branch
+
+
+@router.patch(
+    "/branches/{branch_id}",
+    response_model=BranchResponse,
+    summary="Update an existing branch",
+)
+async def admin_update_branch(branch_id: int, body: BranchUpdate) -> dict:
+    """
+    Update fields of a branch.
+    """
+    # Check if branch exists
+    existing = await get_branch(branch_id)
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Branch with ID {branch_id} not found.",
+        )
+    # If updating code, check uniqueness
+    if body.branch_code and body.branch_code != existing["branch_code"]:
+        dup = await get_branch_by_code(body.branch_code)
+        if dup:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Branch code '{body.branch_code}' already exists.",
+            )
+
+    updated = await update_branch(
+        branch_id,
+        branch_code=body.branch_code,
+        branch_name=body.branch_name,
+        owner_name=body.owner_name,
+        contact_number=body.contact_number,
+        address=body.address,
+    )
+    logger.info("Branch %d updated (unit %d).", branch_id, settings.unit_id)
+    return updated
+
+
+@router.delete(
+    "/branches/{branch_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete a branch",
+)
+async def admin_delete_branch(branch_id: int) -> dict:
+    """
+    Delete a branch from the database.
+    """
+    existing = await get_branch(branch_id)
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Branch with ID {branch_id} not found.",
+        )
+    try:
+        success = await delete_branch(branch_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete branch with ID {branch_id}.",
+            )
+    except Exception as e:
+        logger.error("Error deleting branch %d: %s", branch_id, str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete branch because it has active units, sessions, or expenses associated with it.",
+        )
+    logger.info("Branch %d deleted (unit %d).", branch_id, settings.unit_id)
+    return {"detail": "Branch deleted successfully."}
+

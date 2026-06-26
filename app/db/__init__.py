@@ -13,6 +13,7 @@ from app.db.branches import (
     get_branch_by_code,
     list_branches,
     update_branch,
+    delete_branch,
 )
 
 from app.db.units import (
@@ -101,6 +102,7 @@ __all__ = [
     "get_branch_by_code",
     "list_branches",
     "update_branch",
+    "delete_branch",
     "create_unit",
     "get_unit",
     "get_unit_by_device_uuid",

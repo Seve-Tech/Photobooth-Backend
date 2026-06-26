@@ -8,11 +8,12 @@ from app.models.schemas import AmountSignal, PaymentStatus, BillAcceptedEvent
 
 def test_validate_amount():
     """Test PHP amount validation."""
-    assert validate_amount(20.0) is True
     assert validate_amount(50.0) is True
     assert validate_amount(100.0) is True
+    assert validate_amount(150.0) is True
     assert validate_amount(200.0) is True
-    assert validate_amount(10.0) is False  # Removed denomination
+    assert validate_amount(250.0) is True
+    assert validate_amount(20.0) is False  # Removed denomination
     assert validate_amount(99.0) is False  # Invalid amount
 
 

@@ -28,7 +28,7 @@ import websockets
 from app.core.config import settings
 
 # Reads API key from .env automatically — no need to hardcode it
-SERVER_URL = f"ws://localhost:{settings.port}/ws?api_key={settings.api_key}"
+SERVER_URL = f"ws://localhost:{settings.port}/ws?api_key={settings.api_key}&client_type=arduino"
 
 # Human-readable denomination labels — built from settings so it always matches config.py
 DENOMINATION_LABELS: dict[float, str] = {

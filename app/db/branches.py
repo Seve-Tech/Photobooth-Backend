@@ -100,3 +100,17 @@ async def update_branch(branch_id: int, **kwargs: Any) -> dict[str, Any] | None:
         row = await conn.fetchrow(query, *values)
 
     return row_to_dict(row) if row else None
+
+
+async def delete_branch(branch_id: int) -> bool:
+    pool = get_pool()
+
+    query = """
+        DELETE FROM branches
+        WHERE id = $1
+    """
+
+    async with pool.acquire() as conn:
+        result = await conn.execute(query, branch_id)
+
+    return result == "DELETE 1"
